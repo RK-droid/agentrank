@@ -28,6 +28,7 @@ const agents = readJson(join(ROOT, 'data/agents.json'));
 const tasks = readdirSync(join(ROOT, 'data/tasks')).filter((f) => f.endsWith('.json')).map((f) => readJson(join(ROOT, 'data/tasks', f))).sort((a, b) => a.number - b.number);
 const runs = existsSync(join(ROOT, 'data/runs')) ? readdirSync(join(ROOT, 'data/runs')).filter((f) => f.endsWith('.json')).map((f) => readJson(join(ROOT, 'data/runs', f))).sort((a, b) => b.date.localeCompare(a.date)) : [];
 const validation = Object.fromEntries(tasks.map((t) => { const p = join(ROOT, 'data/validation', `${t.slug}.json`); return [t.slug, existsSync(p) ? readJson(p) : null]; }));
+const verified = existsSync(join(ROOT, 'data/verified.json')) ? readJson(join(ROOT, 'data/verified.json')) : {};
 const agentBy = Object.fromEntries(agents.map((a) => [a.slug, a]));
 const taskBy = Object.fromEntries(tasks.map((t) => [t.slug, t]));
 
@@ -49,10 +50,11 @@ async function liveStars() {
   }));
 }
 
-/** Aggregate verified (AgentRank-run) results per task+agent. Community runs are listed but never ranked. */
-function standings(taskSlug) {
+/** Aggregate results per task+agent. tier 'agentrank' = we ran it; 'community' = submitted, score re-verified by CI. */
+const ciOk = (r) => verified[r.id]?.ok === true;
+function standings(taskSlug, tier = 'agentrank') {
   const rows = agents.map((a) => {
-    const rs = runs.filter((r) => r.task === taskSlug && r.agent === a.slug && r.tier === 'agentrank');
+    const rs = runs.filter((r) => r.task === taskSlug && r.agent === a.slug && (tier === 'agentrank' ? r.tier === 'agentrank' : r.tier !== 'agentrank' && ciOk(r)));
     if (!rs.length) return null;
     return {
       agent: a, runs: rs, n: rs.length,
@@ -66,7 +68,6 @@ function standings(taskSlug) {
   }).filter(Boolean);
   return rows.sort((x, y) => y.score - x.score || y.solveRate - x.solveRate || (x.cost ?? 1e9) - (y.cost ?? 1e9) || (x.duration ?? 1e9) - (y.duration ?? 1e9));
 }
-const communityRuns = (taskSlug) => runs.filter((r) => r.task === taskSlug && r.tier !== 'agentrank');
 const verifiedRuns = runs.filter((r) => r.tier === 'agentrank');
 
 // ---------- layout ----------
@@ -128,7 +129,7 @@ ${body}
 </html>`;
 }
 
-const pills = (r) => `${r.solved ? '<span class="pill ok">Solved</span>' : '<span class="pill no">Not solved</span>'}${r.tier === 'agentrank' ? '<span class="pill ver">AgentRank-run</span>' : '<span class="pill com">Community, unverified</span>'}${r.disqualified ? '<span class="pill no">Disqualified</span>' : ''}`;
+const pills = (r) => `${r.solved ? '<span class="pill ok">Solved</span>' : '<span class="pill no">Not solved</span>'}${r.tier === 'agentrank' ? '<span class="pill ver">AgentRank-run</span>' : `<span class="pill com">Community-submitted</span>${ciOk(r) ? '<span class="pill ok">Score re-verified by CI</span>' : '<span class="pill no">Not re-verified</span>'}`}${r.disqualified ? '<span class="pill no">Disqualified</span>' : ''}`;
 const bar = (pct) => `<span class="bar" role="img" aria-label="${pct.toFixed(0)}%"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></span>`;
 
 function emptyBoard(task) {
@@ -156,16 +157,16 @@ function boardTable(task, { limit } = {}) {
 <td class="num">${r.interventions ?? '—'}</td>
 <td>${r.runs.map((x, k) => `<a href="${u(`/runs/${x.id}/`)}">#${k + 1}</a>`).join(' ')}</td>
 </tr>`).join('')}</tbody></table></div>
-<p class="muted small">Ranked by mean hidden-test score, then solve rate, cost and time. Only AgentRank-run attempts are ranked. "—" means not measured, not zero.</p>`;
+<p class="muted small">Ranked by mean hidden-test score, then solve rate, cost and time. Only AgentRank-run attempts appear here; community runs have their own board. "—" means not measured, not zero.</p>`;
 }
 
 function communityTable(task) {
-  const rs = communityRuns(task.slug);
-  if (!rs.length) return '';
-  return `<h3>Community-submitted runs <span class="pill com">Unverified</span></h3>
-<p class="muted small">Run by third parties with the same harness and submitted by pull request. The evidence is published, but we didn't watch the run, so these are never ranked.</p>
-<div class="table-wrap"><table><thead><tr><th>Agent</th><th>Score</th><th>Solved</th><th>Date</th><th></th></tr></thead><tbody>
-${rs.map((r) => `<tr><td>${esc(agentBy[r.agent].name)}</td><td class="num">${r.score}%</td><td>${r.solved ? 'Yes' : 'No'}</td><td>${esc(fmtDate(r.date))}</td><td><a href="${u(`/runs/${r.id}/`)}">Evidence</a></td></tr>`).join('')}
+  const rows = standings(task.slug, 'community');
+  if (!rows.length) return '';
+  return `<h3>Community leaderboard <span class="pill com">Self-submitted</span></h3>
+<p class="muted small">Runs submitted by builders and users with the open harness. CI re-applies each submitted diff to a clean copy of the task and re-scores it, so <strong>the score is proven to match the code</strong>. Which agent wrote the code, and the time and cost, are self-reported.</p>
+<div class="table-wrap"><table class="board"><thead><tr><th>#</th><th>Agent</th><th>Score</th><th>Solve rate</th><th>Time</th><th>Cost</th><th>Runs</th></tr></thead><tbody>
+${rows.map((r, i) => `<tr><td class="rank">${medal(i)}</td><td>${agentCell(r.agent, r.latest.model || r.latest.agentVersion || '')}</td><td class="num strong">${r.score.toFixed(1)}%</td><td class="num">${Math.round(r.solveRate * 100)}%</td><td class="num">${fmtDur(r.duration)}</td><td class="num">${fmtUsd(r.cost)}</td><td>${r.runs.map((x, k) => `<a href="${u(`/runs/${x.id}/`)}">#${k + 1}</a>`).join(' ')}</td></tr>`).join('')}
 </tbody></table></div>`;
 }
 
@@ -248,11 +249,17 @@ q.addEventListener('input',function(){var t=q.value.toLowerCase().replace(/["']/
 }
 
 const hue = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
-function bestResult(slug) { return tasks.map((t) => standings(t.slug).find((r) => r.agent.slug === slug)).filter(Boolean)[0]; }
+function bestResult(slug) {
+  for (const tier of ['agentrank', 'community']) {
+    const hit = tasks.map((t) => standings(t.slug, tier).find((r) => r.agent.slug === slug)).filter(Boolean)[0];
+    if (hit) return { ...hit, tier };
+  }
+  return null;
+}
 
 function agentCard(a) {
   const best = bestResult(a.slug);
-  const corner = best ? '<span class="corner ok">VERIFIED</span>' : '<span class="corner">UNTESTED</span>';
+  const corner = !best ? '<span class="corner">UNTESTED</span>' : best.tier === 'agentrank' ? '<span class="corner ok">VERIFIED</span>' : '<span class="corner com">COMMUNITY</span>';
   const search = [a.name, a.vendor, a.interface, a.license || 'proprietary', a.openSource ? 'open source oss' : 'closed', a.models].join(' ').toLowerCase();
   return `<a class="card" href="${u(`/agents/${a.slug}/`)}" data-search="${esc(search)}">${corner}
   <div class="card-head"><span class="av" style="--h:${hue(a.slug)}">${esc(a.name[0])}</span><div><strong>${esc(a.name)}</strong><span class="sub">${esc(a.vendor)} · ${esc(a.interface)}</span></div></div>
@@ -273,13 +280,16 @@ const medal = (i) => ['🥇', '🥈', '🥉'][i] || String(i + 1);
 
 /** TrustMRR-style ranked panel. Performance views come only from verified runs; popularity is live GitHub data. */
 function leaderPanel({ limit } = {}) {
-  const views = tasks.map((t) => ({ id: `perf-${t.slug}`, label: `Task #${t.number}: performance`, rows: standings(t.slug), t }));
-  const hasPerf = views.some((x) => x.rows.length);
+  const views = tasks.flatMap((t) => [
+    { id: `perf-${t.slug}`, label: `Task #${t.number}: verified runs`, rows: standings(t.slug), t },
+    { id: `comm-${t.slug}`, label: `Task #${t.number}: community (CI-checked)`, rows: standings(t.slug, 'community'), t, community: true },
+  ]);
+  const firstWithRows = views.find((x) => x.rows.length);
   const byStars = [...agents].sort((a, b) => b.stars.count - a.stars.count);
   const anyLive = agents.some((a) => a.stars.live);
-  const perfTable = (x) => x.rows.length ? `<div class="table-wrap flat"><table class="board"><thead><tr><th>#</th><th>Agent</th><th>Score</th><th>Solved</th><th>Time</th><th>Cost</th><th>Runs</th></tr></thead><tbody>${x.rows.slice(0, limit || Infinity).map((r, i) => `<tr><td class="rank">${medal(i)}</td><td>${agentCell(r.agent, r.latest.model || r.latest.agentVersion || '')}</td><td class="num strong">${r.score.toFixed(1)}%</td><td class="num">${Math.round(r.solveRate * 100)}%</td><td class="num">${fmtDur(r.duration)}</td><td class="num">${fmtUsd(r.cost)}</td><td>${r.runs.map((z, k) => `<a href="${u(`/runs/${z.id}/`)}">#${k + 1}</a>`).join(' ')}</td></tr>`).join('')}</tbody></table></div>` : `<div class="panel-empty"><strong>No verified runs yet.</strong> Performance rankings appear here once real runs exist. We never estimate. <a href="${u(`/tasks/${x.t.slug}/`)}">See the task and harness check →</a></div>`;
+  const perfTable = (x) => x.rows.length ? `<div class="table-wrap flat"><table class="board"><thead><tr><th>#</th><th>Agent</th><th>Score</th><th>Solved</th><th>Time</th><th>Cost</th><th>Runs</th></tr></thead><tbody>${x.rows.slice(0, limit || Infinity).map((r, i) => `<tr><td class="rank">${medal(i)}</td><td>${agentCell(r.agent, r.latest.model || r.latest.agentVersion || '')}</td><td class="num strong">${r.score.toFixed(1)}%</td><td class="num">${Math.round(r.solveRate * 100)}%</td><td class="num">${fmtDur(r.duration)}</td><td class="num">${fmtUsd(r.cost)}</td><td>${r.runs.map((z, k) => `<a href="${u(`/runs/${z.id}/`)}">#${k + 1}</a>`).join(' ')}</td></tr>`).join('')}</tbody></table></div>` : `<div class="panel-empty">${x.community ? `<strong>No community runs yet.</strong> Be the first: run the open harness on your agent and open a pull request. CI re-scores your diff before it goes live. <a href="${u('/submit/#run')}">How to submit a run →</a>` : `<strong>No verified runs yet.</strong> Performance rankings appear here once real runs exist. We never estimate. <a href="${u(`/tasks/${x.t.slug}/`)}">See the task and harness check →</a>`}</div>`;
   const starTable = `<div class="table-wrap flat"><table class="board"><thead><tr><th>#</th><th>Agent</th><th>GitHub stars</th><th>License</th><th>AgentRank score</th></tr></thead><tbody>${byStars.slice(0, limit || Infinity).map((a, i) => { const b = bestResult(a.slug); return `<tr><td class="rank">${medal(i)}</td><td>${agentCell(a, a.summary)}</td><td class="num strong">${a.stars.count.toLocaleString('en-US')}</td><td>${a.license ? esc(a.license) : 'Closed'}</td><td>${b ? `<span class="num">${b.score.toFixed(0)}%</span>` : '<span class="pill pend">Untested</span>'}</td></tr>`; }).join('')}</tbody></table></div><p class="muted small panel-note">Popularity, not performance. Star counts ${anyLive ? 'come live from the GitHub API at build time' : 'are a dated snapshot'} (${esc(agents[0].stars.date)}).</p>`;
-  const def = hasPerf ? views[0].id : 'stars';
+  const def = firstWithRows ? firstWithRows.id : 'stars';
   const opts = [...views.map((x) => [x.id, x.label]), ['stars', 'Popularity: GitHub stars (live)']];
   return `<section class="leader" id="leaderboard">
   <div class="leader-head"><h2>Leaderboard</h2><label class="select"><span class="sr">View</span><select onchange="var p=this.closest('.leader');p.querySelectorAll('[data-view]').forEach(function(e){e.hidden=e.dataset.view!==this.value}.bind(this))">${opts.map(([id, l]) => `<option value="${id}"${id === def ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label></div>
@@ -295,7 +305,7 @@ function leaderboard() {
     og: { key: 'leaderboard', kicker: 'Leaderboard', title: 'AI coding agents ranked by hidden-test results', stats: standings(tasks[0].slug).slice(0, 3).map((r, i) => [`${['1ST', '2ND', '3RD'][i]}`, `${r.agent.name} ${r.score.toFixed(0)}%`]) },
     description: 'AI coding agents ranked on reproducible, hidden-test benchmarks. Scores, solve rate, time and cost, each linked to the run evidence.',
     body: `<h1>Leaderboard</h1>
-<p class="lede">Performance rankings come only from runs we executed with the open harness. Popularity is live GitHub data and is labelled as such.</p>
+<p class="lede">Verified rankings come from runs we executed. Community rankings come from submitted runs whose scores CI re-checked against the submitted code. Popularity is live GitHub data and is labelled as such.</p>
 ${leaderPanel()}
 ${tasks.map((t) => `<section><div class="section-head"><h2>Task #${t.number}: ${esc(t.title)}</h2><a href="${u(`/tasks/${t.slug}/`)}">Task details →</a></div>${boardTable(t)}${communityTable(t)}</section>`).join('')}
 <section><h2>Other benchmarks worth knowing</h2><p>AgentRank is task-level and practical. For research-grade, large-scale evaluation, see <a href="https://www.swebench.com/">SWE-bench</a> (real GitHub issues) and <a href="https://www.tbench.ai/">Terminal-Bench</a> (terminal tasks). We don't copy their numbers here. Go to the source.</p></section>`,
@@ -336,7 +346,7 @@ function agentPages() {
     <label class="small" for="badge-md">Embed (Markdown)</label><input id="badge-md" class="copy" readonly value="${esc(badge)}" onclick="this.select()">
   </section>
 </div>
-${mine.length ? `<section><h2>All published runs</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Task</th><th>Score</th><th>Tier</th><th></th></tr></thead><tbody>${mine.map((r) => `<tr><td>${esc(fmtDate(r.date))}</td><td>${esc(taskBy[r.task].title)}</td><td class="num">${r.score}%</td><td>${r.tier === 'agentrank' ? 'AgentRank-run' : 'Community'}</td><td><a href="${u(`/runs/${r.id}/`)}">Evidence</a></td></tr>`).join('')}</tbody></table></div></section>` : ''}
+${mine.length ? `<section><h2>All published runs</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Task</th><th>Score</th><th>Tier</th><th></th></tr></thead><tbody>${mine.map((r) => `<tr><td>${esc(fmtDate(r.date))}</td><td>${esc(taskBy[r.task].title)}</td><td class="num">${r.score}%</td><td>${r.tier === 'agentrank' ? 'AgentRank-run' : ciOk(r) ? 'Community (CI-checked)' : 'Community'}</td><td><a href="${u(`/runs/${r.id}/`)}">Evidence</a></td></tr>`).join('')}</tbody></table></div></section>` : ''}
 ${a.headless ? `<section><h2>Reproduce with this agent</h2><p>Suggested headless invocation. Check it against the agent's current docs, because CLI flags change.</p><pre><code>node harness/run.mjs run --task ${esc(tasks[0].slug)} --agent ${esc(a.slug)} \\
   --cmd '${esc(a.headless)}'</code></pre></section>` : `<section><h2>Reproduce with this agent</h2><p>${esc(a.name)} is interactive, so use a manual session: <code>node harness/run.mjs prepare --task ${esc(tasks[0].slug)}</code>, open the workspace in ${esc(a.name)}, paste <code>TASK.md</code> as the prompt, then run <code>score</code>. <a href="${u('/submit/#run')}">Full steps</a>.</p></section>`}
 <p class="small muted">Something wrong? <a href="${GH}/issues/new?template=correction.yml&title=${encodeURIComponent(`Correction: ${a.name}`)}">Report a correction</a>.</p>`,
@@ -399,7 +409,7 @@ function runPages() {
     const shown = diffLines.slice(0, 400).join('\n');
     const title = `${a.name} on Task #${t.number}: ${r.hidden.passed}/${r.hidden.total} hidden tests`;
     add(`/runs/${r.id}/`, page({
-      path: `/runs/${r.id}/`, title, noindex: r.tier !== 'agentrank',
+      path: `/runs/${r.id}/`, title, noindex: r.tier !== 'agentrank' && !ciOk(r),
       og: { key: `run-${r.id}`, kicker: `${r.tier === 'agentrank' ? 'Verified run' : 'Community run'} · Task #${t.number}`, title: `${a.name}: ${r.hidden.passed}/${r.hidden.total} hidden tests`, stats: [['SCORE', `${r.score}%`], ['SOLVED', r.solved ? 'Yes' : 'No'], ['TIME', fmtDur(r.durationSec)]] },
       description: `${a.name} scored ${r.score}% on "${t.title}" (${r.solved ? 'solved' : 'not solved'}). Full diff, test output and log.`,
       body: `<p class="crumbs"><a href="${u(`/tasks/${t.slug}/`)}">Task #${t.number}</a> / <a href="${u(`/agents/${a.slug}/`)}">${esc(a.name)}</a> /</p>
@@ -486,7 +496,7 @@ function methodology() {
 <h2>5. Verification tiers</h2>
 <ul>
 <li><span class="pill ver">AgentRank-run</span> We executed it, the full log is published, and it's eligible for ranking.</li>
-<li><span class="pill com">Community, unverified</span> Run by someone else with the same harness and submitted via pull request with evidence. Displayed but never ranked.</li>
+<li><span class="pill com">Community-submitted</span> Run by a builder or user with the same harness and submitted by pull request. CI re-applies the submitted diff to a clean copy of the task and re-scores it, and the PR fails if the numbers don't match. These runs are ranked on a separate community leaderboard. The score is proven; agent identity, time and cost are self-reported.</li>
 </ul>
 <h2 id="limits">6. Limitations (read these)</h2>
 <ul>
@@ -523,7 +533,7 @@ function submit() {
   <p id="sub-err" class="warn" hidden></p>
 </form></section>
 <section class="panel" id="run"><h2>Run it yourself</h2>
-<p>Have access to an agent we haven't tested? Run the open harness and submit the evidence. It will be published as <span class="pill com">Community, unverified</span>.</p>
+<p>Have access to an agent we haven't tested? Run the open harness and submit the evidence. CI re-scores your diff automatically, and if it matches, your agent appears on the <strong>community leaderboard</strong> with a permanent result page and badge.</p>
 <pre><code>git clone ${GH}.git && cd agentrank
 node harness/validate.mjs
 
@@ -538,7 +548,7 @@ node harness/run.mjs prepare --task ${tasks[0].slug}
 #   open the printed folder in your agent, paste TASK.md, let it work
 node harness/run.mjs score --task ${tasks[0].slug} --agent &lt;slug&gt; \\
   --dir &lt;folder&gt; --interventions 0 --duration-sec 0</code></pre>
-<p>Then open a pull request that adds <code>data/runs/&lt;id&gt;.json</code> and its evidence folder. CI rebuilds the site and checks the record.</p>
+<p>Then open a pull request that adds <code>data/runs/&lt;id&gt;.json</code> and its evidence folder. New agent? Add it to <code>data/agents.json</code> in the same PR. CI re-scores the diff, and the site updates when the PR is merged.</p>
 </section></div>
 <script>
 document.getElementById('sub').addEventListener('submit', function (e) {
@@ -592,15 +602,15 @@ for (const [p, html] of Object.entries(pages)) write(p === '/404' ? '404.html' :
 cpSync(join(ROOT, 'site/assets'), join(DIST, 'assets'), { recursive: true });
 for (const r of runs) for (const f of r.artifacts || []) { const src = join(ROOT, 'data/runs', r.id, f); if (existsSync(src)) { mkdirSync(join(DIST, 'runs', r.id), { recursive: true }); cpSync(src, join(DIST, 'runs', r.id, f)); } }
 for (const a of agents) {
-  const s = tasks.map((t) => standings(t.slug).find((r) => r.agent.slug === a.slug)).filter(Boolean)[0];
-  write(`badges/${a.slug}.svg`, s ? badge('AgentRank', `${s.score.toFixed(0)}% · Task #1`, s.score >= 90 ? '#2f7d4f' : s.score >= 50 ? '#a07a12' : '#b4452f') : badge('AgentRank', 'not yet tested', '#7a7a7a'));
+  const s = bestResult(a.slug);
+  write(`badges/${a.slug}.svg`, s ? badge('AgentRank', `${s.score.toFixed(0)}% · Task #1${s.tier === 'agentrank' ? '' : ' · community'}`, s.score >= 90 ? '#2f7d4f' : s.score >= 50 ? '#a07a12' : '#b4452f') : badge('AgentRank', 'not yet tested', '#7a7a7a'));
 }
 const strip = (a) => { const { snapshot, ...rest } = a; return rest; };
 write('api/v1/agents.json', JSON.stringify({ generated: BUILT, license: 'CC-BY-4.0', agents: agents.map(strip) }, null, 2));
 write('api/v1/tasks.json', JSON.stringify({ generated: BUILT, tasks: tasks.map((t) => ({ ...t, validation: validation[t.slug] })) }, null, 2));
 write('api/v1/runs.json', JSON.stringify({ generated: BUILT, runs }, null, 2));
 write('api/v1/leaderboard.json', JSON.stringify({ generated: BUILT, tasks: tasks.map((t) => ({ task: t.slug, standings: standings(t.slug).map((s, i) => ({ rank: i + 1, agent: s.agent.slug, score: s.score, solveRate: s.solveRate, medianDurationSec: s.duration, medianCostUsd: s.cost, runs: s.runs.map((r) => r.id) })) })) }, null, 2));
-const indexable = Object.keys(pages).filter((p) => p !== '/404' && !(p.startsWith('/runs/') && runs.find((r) => p.includes(r.id))?.tier !== 'agentrank'));
+const indexable = Object.keys(pages).filter((p) => p !== '/404' && !(p.startsWith('/runs/') && runs.find((r) => p.includes(r.id))?.tier !== 'agentrank' && !ciOk(runs.find((r) => p.includes(r.id)))));
 write('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${indexable.map((p) => `  <url><loc>${esc(abs(p))}</loc><lastmod>${BUILT.slice(0, 10)}</lastmod></url>`).join('\n')}\n</urlset>\n`);
 write('robots.txt', `User-agent: *\nAllow: /\nSitemap: ${abs('/sitemap.xml')}\n`);
 write('.nojekyll', '');

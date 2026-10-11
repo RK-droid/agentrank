@@ -184,3 +184,4 @@ h2 { font-weight: 700; font-size: 1.15rem; }
   .hero { padding-top: 32px; }
   .cards { grid-template-columns: 1fr; }
 }
+.corner.com { background: color-mix(in srgb, var(--com) 22%, transparent); color: var(--com); }

@@ -1,5 +1,5 @@
 // AgentRank harness core: prepare an isolated task workspace, run an agent in it, score it.
-import { mkdtempSync, cpSync, readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, cpSync, rmSync, readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir, platform, release } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
@@ -95,10 +95,16 @@ export function score(task, dir) {
 
   const visible = runTests(dir, 'test');
 
-  // Hidden suite is copied in only now, after the agent has finished.
+  // Hidden suite is copied in only now, after the agent has finished. Anything the workspace put at that
+  // path is wiped first, and only tests whose names exist in the real hidden suite are counted.
+  rmSync(join(dir, HIDDEN_DIR), { recursive: true, force: true });
   cpSync(join(task.dir, 'hidden'), join(dir, HIDDEN_DIR), { recursive: true });
-  const hidden = runTests(dir, HIDDEN_DIR);
+  const known = new Set(readdirSync(join(task.dir, 'hidden')).flatMap((f) => [...readFileSync(join(task.dir, 'hidden', f), 'utf8').matchAll(/^test\('([^']+)'/gm)].map((m) => m[1])));
+  const run = runTests(dir, HIDDEN_DIR);
+  const seen = new Set();
+  const hidden = { tap: run.tap, tests: run.tests.filter((t) => known.has(t.name) && !seen.has(t.name) && seen.add(t.name)) };
   const expected = task.hiddenTestCount;
+  if (known.size !== expected) throw new Error(`task ${task.slug}: hiddenTestCount ${expected} but suite defines ${known.size} tests`);
   if (hidden.tests.length !== expected) flags.push(`hidden suite reported ${hidden.tests.length}/${expected} tests (crash or syntax error counts as failure)`);
   const hiddenPassed = hidden.tests.filter((t) => t.pass).length;
 

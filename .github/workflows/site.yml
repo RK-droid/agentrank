@@ -15,6 +15,8 @@ jobs:
         with: { node-version: 22 }
       - name: Harness self-check (baseline must fail, reference must pass)
         run: node harness/validate.mjs
+      - name: Re-verify every published run (re-apply diff, re-score, must match the record)
+        run: node harness/verify.mjs
       - name: Build site
         run: SITE_URL="https://$(echo "$OWNER" | tr '[:upper:]' '[:lower:]').github.io/$REPO_NAME" node site/build.mjs
         env:
