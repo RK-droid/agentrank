@@ -74,9 +74,18 @@ for (const q of QUERIES) {
 }
 console.error('');
 
+// Benchmark-ready agents are always included with full data, even if they miss the search window.
+const curated = JSON.parse(readFileSync(join(ROOT, 'data/agents.json'), 'utf8'));
+const pinned = new Set();
+for (const a of curated) {
+  const r = await gh(`https://api.github.com/repos/${a.repo}`);
+  if (r?.id) { seen.set(r.id, r); pinned.add(r.id); }
+}
+
 const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const excluded = [...seen.values()].filter((r) => !isAgent(r)).length;
-const repos = [...seen.values()].filter(isAgent).sort((a, b) => b.stargazers_count - a.stargazers_count).slice(0, LIMIT);
+const ranked = [...seen.values()].filter((r) => isAgent(r) && !pinned.has(r.id)).sort((a, b) => b.stargazers_count - a.stargazers_count).slice(0, LIMIT);
+const repos = [...ranked, ...[...seen.values()].filter((r) => pinned.has(r.id))];
 const prev = existsSync(OUT) ? Object.fromEntries(JSON.parse(readFileSync(OUT, 'utf8')).agents.map((a) => [a.repo, a])) : {};
 const agents = repos.map((r) => ({
   slug: slugify(`${r.owner.login}-${r.name}`),
@@ -88,6 +97,7 @@ const agents = repos.map((r) => ({
   stars: r.stargazers_count,
   starsPrev: prev[r.full_name]?.stars ?? null,
   forks: r.forks_count,
+  openIssues: r.open_issues_count,
   language: r.language,
   license: r.license?.spdx_id && r.license.spdx_id !== 'NOASSERTION' ? r.license.spdx_id : null,
   topics: (r.topics || []).slice(0, 8),

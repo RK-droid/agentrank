@@ -217,3 +217,10 @@ img.av { object-fit: cover; background: var(--surface-2); border: 1px solid var(
 }
 .filters > * { min-width: 0; } .filters select { width: 100%; }
 .board .agent-cell .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.score { display: inline-grid; place-items: center; min-width: 44px; padding: 3px 8px; border-radius: 8px; font-weight: 800; font-variant-numeric: tabular-nums; background: var(--pend-soft); color: var(--pend); }
+.score.ok { background: var(--ok-soft); color: var(--ok); } .score.ver { background: color-mix(in srgb, var(--star) 22%, transparent); color: color-mix(in srgb, var(--star) 70%, var(--ink)); } .score.com { background: var(--com-soft); color: var(--com); }
+.breakdown { display: grid; gap: 8px; margin: 8px 0 6px; }
+.bd-row { display: grid; grid-template-columns: 1fr 120px 34px; gap: 10px; align-items: center; font-size: 0.9rem; }
+.bd-row .bar { width: 100%; }
+.stat-cards.four { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 760px) { .stat-cards.four { grid-template-columns: 1fr 1fr; } }

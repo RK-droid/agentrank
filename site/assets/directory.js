@@ -11,11 +11,13 @@
   var medals = ['\u{1F947}', '\u{1F948}', '\u{1F949}'];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function img(o, cls) { return '<img class="av ' + cls + '" src="' + esc(o.avatar) + '" alt="" width="40" height="40" loading="lazy" decoding="async" referrerpolicy="no-referrer">'; }
+  function tone(n) { return n >= 80 ? 'ok' : n >= 60 ? 'ver' : n >= 40 ? 'com' : 'pend'; }
+  function short(n) { return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); }
   function row(d, i) {
-    return '<tr><td class="rank">' + (sort.value === 'stars' && !q.value && !cat.value && !lic.checked && medals[i] || (i + 1)) + '</td>' +
+    return '<tr><td class="rank">' + (sort.value === 'score' && !q.value && !cat.value && !lic.checked && medals[i] || (i + 1)) + '</td>' +
       '<td><a class="agent-cell" href="' + C.base + '/agents/' + d.slug + '/">' + img(d.owner, 'sm') + '<span><strong>' + esc(d.name) + (d.curated ? ' <span class="pill ver">Benchmark-ready</span>' : '') + '</strong><span class="sub">' + esc(d.description) + '</span></span></a></td>' +
       '<td><a class="maker" href="' + esc(d.owner.url) + '" rel="nofollow">' + img(d.owner, 'xs') + '<span>' + esc(d.owner.login) + '</span></a></td>' +
-      '<td class="small">' + esc(d.category) + '</td><td class="num strong">' + d.stars.toLocaleString('en-US') + '</td><td class="small">' + esc(d.license || '—') + '</td></tr>';
+      '<td class="small">' + esc(d.category) + '</td><td><span class="score ' + tone(d.arScore) + '">' + d.arScore + '</span></td><td class="num">' + short(d.stars) + '</td></tr>';
   }
   function apply(resetPage) {
     var terms = q.value.toLowerCase().trim().split(' ').filter(Boolean);
@@ -31,12 +33,13 @@
       if (key === 'new') return (b.createdAt || '').localeCompare(a.createdAt || '');
       if (key === 'pushed') return (b.pushedAt || '').localeCompare(a.pushedAt || '');
       if (key === 'name') return a.name.localeCompare(b.name);
+      if (key === 'score') return b.arScore - a.arScore || b.stars - a.stars;
       return b.stars - a.stars;
     });
     if (resetPage) page = 0;
     render();
     var p = new URLSearchParams();
-    if (q.value) p.set('q', q.value); if (cat.value) p.set('cat', cat.value); if (sort.value !== 'stars') p.set('sort', sort.value); if (lic.checked) p.set('oss', '1');
+    if (q.value) p.set('q', q.value); if (cat.value) p.set('cat', cat.value); if (sort.value !== 'score') p.set('sort', sort.value); if (lic.checked) p.set('oss', '1');
     history.replaceState(null, '', p.toString() ? '?' + p : location.pathname);
   }
   function render() {

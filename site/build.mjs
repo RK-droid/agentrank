@@ -4,6 +4,7 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, rmSync, cpSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { scoreAll, WEIGHTS, PARTS } from './score.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = join(ROOT, 'dist');
@@ -275,16 +276,32 @@ const avImg = (owner, cls = '') => `<img class="av ${cls}" src="${esc(owner.avat
 const makerCell = (owner) => `<a class="maker" href="${esc(owner.url)}" rel="nofollow">${avImg(owner, 'xs')}<span>${esc(owner.login)}</span></a>`;
 const isNew = (d) => d.createdAt && Date.now() - new Date(d.createdAt) < 120 * 864e5;
 /** Unified popularity list: curated agents + GitHub directory, by stars. */
+let _listings = null;
+/** Every agent (benchmark-ready + directory), scored and ranked by AgentRank Score, then stars. */
 function listings() {
-  return [
-    ...agents.map((a) => ({ slug: a.slug, name: a.name, repo: a.repo, description: a.summary, stars: a.stars.count, license: a.license, category: 'Coding', language: a.dir?.language || null, createdAt: a.dir?.createdAt || null, pushedAt: a.dir?.pushedAt || null, owner: a.owner, curated: true })),
+  if (_listings) return _listings;
+  _listings = [
+    ...agents.map((a) => ({ slug: a.slug, name: a.name, repo: a.repo, description: a.summary, stars: a.stars.count, forks: a.dir?.forks ?? null, license: a.license, category: 'Coding', language: a.dir?.language || null, createdAt: a.dir?.createdAt || null, pushedAt: a.dir?.pushedAt || null, owner: a.owner, curated: true })),
     ...directory.map((d) => ({ ...d, curated: false })),
-  ].sort((x, y) => y.stars - x.stars);
+  ];
+  scoreAll(_listings);
+  _listings.sort((x, y) => y.arScore - x.arScore || y.stars - x.stars);
+  const starOrder = [..._listings].sort((x, y) => y.stars - x.stars);
+  starOrder.forEach((d, i) => { d.starRank = i + 1; });
+  _listings.forEach((d, i) => { d.rank = i + 1; });
+  for (const a of agents) { const l = _listings.find((d) => d.slug === a.slug); a.arScore = l.arScore; a.arParts = l.arParts; a.rank = l.rank; }
+  return _listings;
+}
+const scoreTone = (n) => n >= 80 ? 'ok' : n >= 60 ? 'ver' : n >= 40 ? 'com' : 'pend';
+const scorePill = (n) => `<span class="score ${scoreTone(n)}">${n}</span>`;
+function scoreBreakdown(d) {
+  return `<div class="breakdown">${Object.entries(WEIGHTS).map(([k, w]) => `<div class="bd-row"><span class="bd-k">${esc(k[0].toUpperCase() + k.slice(1))} <span class="muted">×${w}%</span></span>${bar(d.arParts[k])}<span class="num small">${d.arParts[k]}</span></div>`).join('')}</div>
+<p class="small muted">Computed from public GitHub data. This measures traction and upkeep, not how well the agent does tasks. <a href="${u('/methodology/#score')}">How the score works</a></p>`;
 }
 function dirCard(d) {
   return `<a class="card" href="${u(`/agents/${d.slug}/`)}">${isNew(d) ? '<span class="corner com">NEW</span>' : d.curated ? '<span class="corner ok">BENCHMARK-READY</span>' : ''}
   <div class="card-head">${avImg(d.owner)}<div><strong>${esc(d.name)}</strong><span class="sub">by ${esc(d.owner.login)} · ${esc(d.category)}</span></div></div>
-  <div class="metrics"><div><span class="k">STARS</span><span class="v">${fmtNum(d.stars)}</span></div><div><span class="k">LANGUAGE</span><span class="v">${esc(d.language || '—')}</span></div><div><span class="k">LICENSE</span><span class="v">${d.license ? esc(d.license.replace('-2.0', '')) : '—'}</span></div></div>
+  <div class="metrics"><div><span class="k">AR SCORE</span><span class="v">${d.arScore}<span class="muted small">/100</span></span></div><div><span class="k">STARS</span><span class="v">${fmtNum(d.stars)}</span></div><div><span class="k">LICENSE</span><span class="v">${d.license ? esc(d.license.replace('-2.0', '')) : '—'}</span></div></div>
 </a>`;
 }
 const hue = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
@@ -298,11 +315,11 @@ function bestResult(slug) {
 
 function agentCard(a) {
   const best = bestResult(a.slug);
-  const corner = !best ? '<span class="corner">UNTESTED</span>' : best.tier === 'agentrank' ? '<span class="corner ok">VERIFIED</span>' : '<span class="corner com">COMMUNITY</span>';
+  const corner = !best ? '<span class="corner">TASK UNTESTED</span>' : best.tier === 'agentrank' ? '<span class="corner ok">VERIFIED</span>' : '<span class="corner com">COMMUNITY</span>';
   const search = [a.name, a.vendor, a.interface, a.license || 'proprietary', a.openSource ? 'open source oss' : 'closed', a.models].join(' ').toLowerCase();
   return `<a class="card" href="${u(`/agents/${a.slug}/`)}" data-search="${esc(search)}">${corner}
   <div class="card-head">${avImg(a.owner)}<div><strong>${esc(a.name)}</strong><span class="sub">${esc(a.vendor)} · ${esc(a.interface)}</span></div></div>
-  <div class="metrics"><div><span class="k">SCORE</span><span class="v">${best ? `${best.score.toFixed(0)}%` : '—'}</span></div><div><span class="k">STARS</span><span class="v">${fmtNum(a.stars.count)}</span></div><div><span class="k">LICENSE</span><span class="v">${a.license ? esc(a.license.replace('-2.0', '')) : 'Closed'}</span></div></div>
+  <div class="metrics"><div><span class="k">AR SCORE</span><span class="v">${a.arScore}<span class="muted small">/100</span></span></div><div><span class="k">TASK #1</span><span class="v">${best ? `${best.score.toFixed(0)}%` : '—'}</span></div><div><span class="k">STARS</span><span class="v">${fmtNum(a.stars.count)}</span></div></div>
 </a>`;
 }
 
@@ -327,9 +344,9 @@ function leaderPanel({ limit } = {}) {
   const all = listings();
   const anyLive = agents.some((a) => a.stars.live);
   const perfTable = (x) => x.rows.length ? `<div class="table-wrap flat"><table class="board"><thead><tr><th>#</th><th>Agent</th><th>Score</th><th>Solved</th><th>Time</th><th>Cost</th><th>Runs</th></tr></thead><tbody>${x.rows.slice(0, limit || Infinity).map((r, i) => `<tr><td class="rank">${medal(i)}</td><td>${agentCell(r.agent, r.latest.model || r.latest.agentVersion || '')}</td><td class="num strong">${r.score.toFixed(1)}%</td><td class="num">${Math.round(r.solveRate * 100)}%</td><td class="num">${fmtDur(r.duration)}</td><td class="num">${fmtUsd(r.cost)}</td><td>${r.runs.map((z, k) => `<a href="${u(`/runs/${z.id}/`)}">#${k + 1}</a>`).join(' ')}</td></tr>`).join('')}</tbody></table></div>` : `<div class="panel-empty">${x.community ? `<strong>No community runs yet.</strong> Be the first: run the open harness on your agent and open a pull request. CI re-scores your diff before it goes live. <a href="${u('/submit/#run')}">How to submit a run →</a>` : `<strong>No verified runs yet.</strong> Performance rankings appear here once real runs exist. We never estimate. <a href="${u(`/tasks/${x.t.slug}/`)}">See the task and harness check →</a>`}</div>`;
-  const starTable = `<div class="table-wrap flat"><table class="board"><thead><tr><th>#</th><th>Agent</th><th>Made by</th><th>GitHub stars</th><th>Benchmark</th></tr></thead><tbody>${all.slice(0, limit || 100).map((d, i) => { const b = d.curated ? bestResult(d.slug) : null; return `<tr><td class="rank">${medal(i)}</td><td>${agentCell(d, d.description)}</td><td>${makerCell(d.owner)}</td><td class="num strong">${fmtInt(d.stars)}</td><td>${b ? `<span class="num">${b.score.toFixed(0)}%</span>` : d.curated ? '<span class="pill ver">Ready</span>' : '<span class="pill pend">Not tested</span>'}</td></tr>`; }).join('')}</tbody></table></div><p class="muted small panel-note">Popularity, not performance: GitHub stars from the GitHub API (${esc((dirData.fetched || BUILT).slice(0, 10))}${anyLive ? ', benchmark-ready agents live at build' : ''}). <a href="${u('/agents/')}">All ${fmtInt(all.length)} agents →</a></p>`;
+  const starTable = `<div class="table-wrap flat"><table class="board"><thead><tr><th>#</th><th>Agent</th><th>Made by</th><th>AgentRank Score</th><th>Stars</th><th>Task #1</th></tr></thead><tbody>${all.slice(0, limit || 100).map((d, i) => { const b = d.curated ? bestResult(d.slug) : null; return `<tr><td class="rank">${medal(i)}</td><td>${agentCell(d, d.description)}</td><td>${makerCell(d.owner)}</td><td>${scorePill(d.arScore)}</td><td class="num">${fmtNum(d.stars)}</td><td>${b ? `<span class="num">${b.score.toFixed(0)}%</span>` : d.curated ? '<span class="pill ver">Ready</span>' : '<span class="muted small">—</span>'}</td></tr>`; }).join('')}</tbody></table></div><p class="muted small panel-note">AgentRank Score (0–100): popularity, adoption, activity, momentum and openness, computed from GitHub data (${esc((dirData.fetched || BUILT).slice(0, 10))}). It measures traction and upkeep, not task performance. <a href="${u('/methodology/#score')}">Formula</a> · <a href="${u('/agents/')}">All ${fmtInt(all.length)} agents →</a></p>`;
   const def = firstWithRows ? firstWithRows.id : 'stars';
-  const opts = [...views.map((x) => [x.id, x.label]), ['stars', `Popularity: top ${limit || 100} by GitHub stars`]];
+  const opts = [...views.map((x) => [x.id, x.label]), ['stars', `AgentRank Score: top ${limit || 100} of ${fmtInt(all.length)}`]];
   return `<section class="leader" id="leaderboard">
   <div class="leader-head"><h2>Leaderboard</h2><label class="select"><span class="sr">View</span><select onchange="var p=this.closest('.leader');p.querySelectorAll('[data-view]').forEach(function(e){e.hidden=e.dataset.view!==this.value}.bind(this))">${opts.map(([id, l]) => `<option value="${id}"${id === def ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label></div>
   ${views.map((x) => `<div data-view="${x.id}"${x.id === def ? '' : ' hidden'}>${perfTable(x)}</div>`).join('')}
@@ -356,15 +373,16 @@ function directoryPage(d, rank, total) {
   const claim = `${GH}/issues/new?template=claim.yml&title=${encodeURIComponent(`Claim: ${d.repo}`)}&repo=${encodeURIComponent(d.url)}`;
   add(`/agents/${d.slug}/`, page({
     path: `/agents/${d.slug}/`, title: `${d.name} by ${d.owner.login}: AI agent profile`,
-    description: `${d.name} (${d.repo}) by ${d.owner.login}: ${d.description.slice(0, 150)} ${fmtInt(d.stars)} GitHub stars, #${rank} of ${fmtInt(total)} AI agents on AgentRank.`,
-    og: rank <= 150 ? { key: `agent-${d.slug}`, kicker: `#${rank} AI agent · by ${d.owner.login}`, title: d.name, stats: [['STARS', fmtNum(d.stars)], ['CATEGORY', d.category], ['LICENSE', d.license || '—']] } : undefined,
+    description: `${d.name} (${d.repo}) by ${d.owner.login}: AgentRank Score ${d.arScore}/100, #${rank} of ${fmtInt(total)} AI agents. ${d.description.slice(0, 120)} ${fmtInt(d.stars)} GitHub stars.`,
+    og: rank <= 150 ? { key: `agent-${d.slug}`, kicker: `#${rank} of ${fmtInt(total)} AI agents · by ${d.owner.login}`, title: d.name, stats: [['AR SCORE', `${d.arScore}/100`], ['STARS', fmtNum(d.stars)], ['CATEGORY', d.category]] } : undefined,
     jsonld: { '@context': 'https://schema.org', '@type': 'SoftwareSourceCode', name: d.name, description: d.description, codeRepository: d.url, ...(d.language ? { programmingLanguage: d.language } : {}), ...(d.license ? { license: d.license } : {}), author: { '@type': d.owner.type === 'User' ? 'Person' : 'Organization', name: d.owner.login, url: d.owner.url } },
     body: `<p class="crumbs"><a href="${u('/agents/')}">Agents</a> / ${esc(d.category)} /</p>
 <div class="profile-head">${avImg(d.owner, 'lg')}<div><h1>${esc(d.name)}</h1><p class="maker-line">Made by ${makerCell(d.owner)} <span class="muted small">(${d.owner.type === 'User' ? 'individual' : 'organisation'})</span></p></div></div>
 <p class="lede">${esc(d.description) || '<span class="muted">No description on GitHub.</span>'}</p>
 <p><a class="btn btn-light" href="${esc(d.url)}">View on GitHub ↗</a> ${d.homepage ? `<a class="btn btn-ghost" href="${esc(/^https?:/.test(d.homepage) ? d.homepage : `https://${d.homepage}`)}" rel="nofollow">Website ↗</a>` : ''}</p>
-<div class="cards stat-cards">
-  <div class="card"><div class="metrics one"><div><span class="k">RANK BY STARS</span><span class="v">#${rank} <span class="muted small">of ${fmtInt(total)}</span></span></div></div></div>
+<div class="cards stat-cards four">
+  <div class="card"><div class="metrics one"><div><span class="k">AGENTRANK SCORE</span><span class="v">${d.arScore}<span class="muted small">/100</span></span></div></div></div>
+  <div class="card"><div class="metrics one"><div><span class="k">RANK</span><span class="v">#${rank} <span class="muted small">of ${fmtInt(total)}</span></span></div></div></div>
   <div class="card"><div class="metrics one"><div><span class="k">GITHUB STARS</span><span class="v">${fmtInt(d.stars)}${growth ? ` <span class="small ${growth > 0 ? 'tick' : 'cross'}">${growth > 0 ? '+' : ''}${fmtInt(growth)}</span>` : ''}</span></div></div></div>
   <div class="card"><div class="metrics one"><div><span class="k">FORKS</span><span class="v">${fmtInt(d.forks)}</span></div></div></div>
 </div>
@@ -379,7 +397,10 @@ function directoryPage(d, rank, total) {
     <dt>Created</dt><dd>${d.createdAt ? esc(fmtDate(d.createdAt)) : '—'}</dd>
     <dt>Last push</dt><dd>${d.pushedAt ? esc(fmtDate(d.pushedAt)) : '—'}</dd>
   </dl><p class="small muted">From the GitHub API, ${esc((dirData.fetched || BUILT).slice(0, 10))}.</p></section>
-  <section class="panel"><h2>AgentRank benchmark</h2>
+  <section class="panel"><h2>Score breakdown</h2>${scoreBreakdown(d)}
+    <h3>Embed your score</h3><img src="${u(`/badges/${d.slug}.svg`)}" alt="AgentRank badge for ${esc(d.name)}" height="20">
+    <input class="copy" readonly aria-label="Badge markdown" value="${esc(`[![AgentRank](${abs(`/badges/${d.slug}.svg`)})](${abs(`/agents/${d.slug}/`)})`)}" onclick="this.select()">
+    <h2>Task benchmark</h2>
     <p><span class="pill pend">Not benchmarked</span></p>
     <p class="small">Listing is not an endorsement. ${d.category === 'Coding' ? `This looks like a coding agent, so it can be scored on <a href="${u(`/tasks/${tasks[0].slug}/`)}">Task #1</a> with the open harness.` : 'Benchmark tasks for this category are on the roadmap.'}</p>
     <p><a class="btn btn-sm" href="${u('/submit/#run')}">Submit a run</a> <a class="btn btn-ghost btn-sm" href="${claim}">Claim this listing</a></p>
@@ -396,21 +417,21 @@ function agentPages() {
     path: '/agents/', title: `${fmtInt(all.length)} AI agents ranked: open-source agent directory`,
     description: `Directory of ${fmtInt(all.length)} open-source AI agents on GitHub (coding, browser, research, multi-agent and more) with makers, stars and AgentRank benchmark status.`,
     body: `<h1>AI agent directory</h1>
-<p class="lede">${fmtInt(all.length)} open-source AI agents, pulled from the GitHub API with their real makers. Ranked by stars, which measures popularity, not performance. ${agents.length} coding agents are benchmark-ready. <a href="${u('/methodology/#directory')}">How this list is built</a></p>
+<p class="lede">${fmtInt(all.length)} open-source AI agents, pulled from the GitHub API with their real makers. Ranked by AgentRank Score (0–100), calculated from GitHub data: popularity, adoption, activity, momentum and openness. It measures traction and upkeep, not task performance. ${agents.length} coding agents are benchmark-ready. <a href="${u('/methodology/#directory')}">How this list is built</a></p>
 <div class="filters" role="search">
   <label class="search-box"><span aria-hidden="true">⌕</span><input id="dq" type="search" placeholder="Search name, maker, topic…" aria-label="Search agents" autocomplete="off"></label>
   <select id="dc" aria-label="Category"><option value="">All categories</option>${cats.map((c) => `<option>${esc(c)}</option>`).join('')}</select>
-  <select id="ds" aria-label="Sort"><option value="stars">Most stars</option><option value="new">Newest</option><option value="pushed">Recently updated</option><option value="name">A–Z</option></select>
+  <select id="ds" aria-label="Sort"><option value="score">AgentRank Score</option><option value="stars">Most stars</option><option value="new">Newest</option><option value="pushed">Recently updated</option><option value="name">A–Z</option></select>
   <label class="check"><input id="dl" type="checkbox"> OSI licence only</label>
 </div>
 <p id="dcount" class="muted small">${fmtInt(all.length)} agents</p>
-<div class="leader flat-top"><div class="table-wrap flat"><table class="board"><thead><tr><th>#</th><th>Agent</th><th>Made by</th><th>Category</th><th>Stars</th><th>License</th></tr></thead>
-<tbody id="drows">${all.slice(0, 50).map((d, i) => `<tr><td class="rank">${medal(i)}</td><td>${agentCell(d, d.description)}</td><td>${makerCell(d.owner)}</td><td class="small">${esc(d.category)}</td><td class="num strong">${fmtInt(d.stars)}</td><td class="small">${esc(d.license || '—')}</td></tr>`).join('')}</tbody></table></div>
+<div class="leader flat-top"><div class="table-wrap flat"><table class="board"><thead><tr><th>#</th><th>Agent</th><th>Made by</th><th>Category</th><th>Score</th><th>Stars</th></tr></thead>
+<tbody id="drows">${all.slice(0, 50).map((d, i) => `<tr><td class="rank">${medal(i)}</td><td>${agentCell(d, d.description)}</td><td>${makerCell(d.owner)}</td><td class="small">${esc(d.category)}</td><td>${scorePill(d.arScore)}</td><td class="num">${fmtNum(d.stars)}</td></tr>`).join('')}</tbody></table></div>
 <div class="pager"><button id="dprev" class="btn btn-ghost btn-sm" type="button">← Prev</button><span id="dpage" class="muted small">Page 1</span><button id="dnext" class="btn btn-ghost btn-sm" type="button">Next →</button></div></div>
 <p class="small muted">Missing an agent? <a href="${u('/submit/')}">Submit it</a>. Is one of these yours? Open the listing and claim it.</p>
 <script>window.ARD={base:${JSON.stringify(BASE)},src:${JSON.stringify(u('/api/v1/directory.json'))}}</script><script src="${u('/assets/directory.js')}" defer></script>`,
   }));
-  all.forEach((d, i) => { if (!d.curated) directoryPage(d, i + 1, all.length); });
+  all.forEach((d) => { if (!d.curated) directoryPage(d, d.rank, all.length); });
   for (const a of agents) {
     const mine = runs.filter((r) => r.agent === a.slug);
     const results = tasks.map((t) => ({ t, s: standings(t.slug).find((r) => r.agent.slug === a.slug), rank: standings(t.slug).findIndex((r) => r.agent.slug === a.slug) + 1, total: standings(t.slug).length }));
@@ -433,7 +454,7 @@ function agentPages() {
     <dt>GitHub stars</dt><dd>${a.stars.count.toLocaleString('en-US')} <span class="muted small">(${a.stars.live ? 'live from GitHub API' : 'snapshot'}, ${esc(a.stars.date)})</span></dd>
     <dt>Links</dt><dd><a href="${esc(a.homepage)}">Website/docs</a> · <a href="https://github.com/${esc(a.repo)}">github.com/${esc(a.repo)}</a></dd>
   </dl></section>
-  <section class="panel"><h2>AgentRank results</h2>
+  <section class="panel"><h2>AgentRank Score: ${a.arScore}/100 <span class="muted small">#${a.rank} of ${fmtInt(listings().length)}</span></h2>${scoreBreakdown(a)}<h2>Task results</h2>
     ${results.map(({ t, s, rank, total }) => s ? `<div class="result"><div><a href="${u(`/tasks/${t.slug}/`)}">Task #${t.number}: ${esc(t.title)}</a></div><div class="big num">${s.score.toFixed(1)}%</div>${bar(s.score)}<div class="small">Rank ${rank} of ${total} · solve rate ${Math.round(s.solveRate * 100)}% over ${s.n} run(s) · median ${fmtDur(s.duration)} · ${fmtUsd(s.cost)}</div></div>` : `<div class="result"><div><a href="${u(`/tasks/${t.slug}/`)}">Task #${t.number}: ${esc(t.title)}</a></div><p><span class="pill pend">Not yet tested</span></p><p class="small muted">No verified run yet. We don't estimate.</p></div>`).join('')}
     <h3>Badge</h3><img src="${u(`/badges/${a.slug}.svg`)}" alt="AgentRank badge for ${esc(a.name)}" height="20">
     <label class="small" for="badge-md">Embed (Markdown)</label><input id="badge-md" class="copy" readonly value="${esc(badge)}" onclick="this.select()">
@@ -599,9 +620,13 @@ function methodology() {
 <li><strong>Conflict-of-interest disclosure.</strong> Parts of this site and harness were written with help from AI coding tools, including Claude Code, which is also listed here. That's why scoring is fully automated, the code is open, and every run can be rerun by anyone.</li>
 <li><strong>Not a replacement for research benchmarks.</strong> <a href="https://www.swebench.com/">SWE-bench</a> and <a href="https://www.tbench.ai/">Terminal-Bench</a> evaluate at much larger scale. We focus on practical, explainable tasks and cost.</li>
 </ul>
-<h2 id="directory">7. The agent directory</h2>
+<h2 id="score">7. AgentRank Score (every agent)</h2>
+<p>Every listed agent gets a 0–100 <strong>AgentRank Score</strong> computed only from public GitHub data, so anyone can recompute it. It measures <strong>traction and upkeep</strong>, not how well the agent completes tasks. Task performance is a separate benchmark score, and only agents with real runs have one.</p>
+<ul>${Object.entries(WEIGHTS).map(([k, w]) => `<li><strong>${w}%</strong>: ${esc(PARTS[k])}</li>`).join('')}</ul>
+<p>Activity points: pushed in the last 7 days = 100, 30 days = 85, 90 days = 60, 180 days = 35, 365 days = 15, older = 0. Percentiles are relative to every agent in the directory, so scores shift as the ecosystem changes. Momentum treats repos younger than 30 days as 30 days old. The code is in <a href="${GH}/blob/main/site/score.mjs"><code>site/score.mjs</code></a>.</p>
+<h2 id="directory">8. The agent directory</h2>
 <p>The directory lists the most-starred open-source AI agent repositories on GitHub. It's built by querying the GitHub search API across agent-related topics and keywords (for example <code>topic:ai-agent</code>, <code>topic:coding-agent</code> and "autonomous agent"), with a 200-star minimum and forks and archived repos excluded. Names, makers, avatars, stars, licences and dates come straight from GitHub. Categories are assigned automatically from each repo's name, description and topics, so they can be wrong. A listing isn't an endorsement and isn't a benchmark result. Only agents with runs get scores. The list refreshes weekly. Makers can <a href="${GH}/issues/new?template=claim.yml">claim a listing</a> or <a href="${GH}/issues/new?template=correction.yml">ask for a correction</a>.</p>
-<h2>8. Corrections</h2>
+<h2>9. Corrections</h2>
 <p>Found an error? <a href="${GH}/issues/new?template=correction.yml">Open a correction</a>. Corrections are made publicly in the git history.</p>
 </div>`,
   }));
@@ -703,7 +728,8 @@ for (const a of agents) {
 const strip = (a) => { const { snapshot, ...rest } = a; return rest; };
 write('api/v1/agents.json', JSON.stringify({ generated: BUILT, license: 'CC-BY-4.0', agents: agents.map(strip) }, null, 2));
 write('api/v1/tasks.json', JSON.stringify({ generated: BUILT, tasks: tasks.map((t) => ({ ...t, validation: validation[t.slug] })) }, null, 2));
-write('api/v1/directory.json', JSON.stringify({ generated: BUILT, fetched: dirData.fetched, source: 'GitHub REST API', agents: listings().map((d) => ({ slug: d.slug, name: d.name, repo: d.repo, description: d.description, stars: d.stars, license: d.license, category: d.category, language: d.language, createdAt: d.createdAt, pushedAt: d.pushedAt, curated: d.curated, owner: { login: d.owner.login, avatar: d.owner.avatar, url: d.owner.url } })) }));
+for (const d of listings()) if (!d.curated) write(`badges/${d.slug}.svg`, badge('AgentRank', `${d.arScore}/100 · #${d.rank}`, d.arScore >= 80 ? '#2f7d4f' : d.arScore >= 60 ? '#3b6fb6' : d.arScore >= 40 ? '#a07a12' : '#7a7a7a'));
+write('api/v1/directory.json', JSON.stringify({ generated: BUILT, fetched: dirData.fetched, source: 'GitHub REST API', scoring: { weights: WEIGHTS, parts: PARTS }, agents: listings().map((d) => ({ slug: d.slug, rank: d.rank, arScore: d.arScore, arParts: d.arParts, name: d.name, repo: d.repo, description: d.description, stars: d.stars, license: d.license, category: d.category, language: d.language, createdAt: d.createdAt, pushedAt: d.pushedAt, curated: d.curated, owner: { login: d.owner.login, avatar: d.owner.avatar, url: d.owner.url } })) }));
 write('api/v1/runs.json', JSON.stringify({ generated: BUILT, runs }, null, 2));
 write('api/v1/leaderboard.json', JSON.stringify({ generated: BUILT, tasks: tasks.map((t) => ({ task: t.slug, standings: standings(t.slug).map((s, i) => ({ rank: i + 1, agent: s.agent.slug, score: s.score, solveRate: s.solveRate, medianDurationSec: s.duration, medianCostUsd: s.cost, runs: s.runs.map((r) => r.id) })) })) }, null, 2));
 const indexable = Object.keys(pages).filter((p) => p !== '/404' && !(p.startsWith('/runs/') && runs.find((r) => p.includes(r.id))?.tier !== 'agentrank' && !ciOk(runs.find((r) => p.includes(r.id)))));
