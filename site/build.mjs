@@ -71,7 +71,12 @@ const verifiedRuns = runs.filter((r) => r.tier === 'agentrank');
 
 // ---------- layout ----------
 const NAV = [['/leaderboard/', 'Leaderboard'], ['/agents/', 'Agents'], ['/tasks/', 'Tasks'], ['/compare/', 'Compare'], ['/methodology/', 'Methodology']];
-function page({ path, title, description, body, jsonld, noindex = false }) {
+// Share-card specs, rendered to dist/og/<key>.png by site/og.mjs.
+const ogs = {};
+const OG_DEFAULT = { key: 'default', kicker: 'AgentRank', title: 'The database of verified AI agent performance', stats: [] };
+function page({ path, title, description, body, jsonld, noindex = false, og }) {
+  const card = og || OG_DEFAULT;
+  ogs[card.key] = card;
   const full = path === '/' ? title : `${title} · AgentRank`;
   const ld = [{ '@context': 'https://schema.org', '@type': 'WebSite', name: 'AgentRank', url: abs('/') }, ...(jsonld ? [jsonld] : [])];
   return `<!doctype html>
@@ -88,7 +93,12 @@ ${noindex ? '<meta name="robots" content="noindex">' : ''}
 <meta property="og:title" content="${esc(full)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:url" content="${esc(abs(path))}">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="${esc(abs(`/og/${card.key}.png`))}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${esc(abs(`/og/${card.key}.png`))}">
+${process.env.GOATCOUNTER_CODE ? `<script data-goatcounter="https://${esc(process.env.GOATCOUNTER_CODE)}.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>` : ''}
 <link rel="icon" href="${u('/assets/favicon.svg')}" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;500;600;700;800&display=swap">
@@ -186,6 +196,7 @@ function home() {
   const v = validation[t.slug];
   add('/', page({
     path: '/', title: 'AgentRank: the database of verified AI coding agent performance',
+    og: { ...OG_DEFAULT, stats: [['AGENTS', agents.length], ['TASKS', tasks.length], ['VERIFIED RUNS', verifiedRuns.length]] },
     description: 'Independent, evidence-first benchmarks of AI coding agents like Claude Code, Codex CLI, Gemini CLI and Aider. Every score links to the diff, test output and logs that produced it.',
     body: `
 <section class="hero">
@@ -281,6 +292,7 @@ const agentCell = (a, sub) => `<a class="agent-cell" href="${u(`/agents/${a.slug
 function leaderboard() {
   add('/leaderboard/', page({
     path: '/leaderboard/', title: 'AI coding agent leaderboard',
+    og: { key: 'leaderboard', kicker: 'Leaderboard', title: 'AI coding agents ranked by hidden-test results', stats: standings(tasks[0].slug).slice(0, 3).map((r, i) => [`${['1ST', '2ND', '3RD'][i]}`, `${r.agent.name} ${r.score.toFixed(0)}%`]) },
     description: 'AI coding agents ranked on reproducible, hidden-test benchmarks. Scores, solve rate, time and cost, each linked to the run evidence.',
     body: `<h1>Leaderboard</h1>
 <p class="lede">Performance rankings come only from runs we executed with the open harness. Popularity is live GitHub data and is labelled as such.</p>
@@ -302,6 +314,7 @@ function agentPages() {
     const badge = `[![AgentRank](${abs(`/badges/${a.slug}.svg`)})](${abs(`/agents/${a.slug}/`)})`;
     add(`/agents/${a.slug}/`, page({
       path: `/agents/${a.slug}/`, title: `${a.name}: benchmark results, pricing model and facts`,
+      og: { key: `agent-${a.slug}`, kicker: `Agent · ${a.vendor}`, title: a.name, stats: [['SCORE', bestResult(a.slug) ? `${bestResult(a.slug).score.toFixed(0)}%` : 'Untested'], ['STARS', fmtNum(a.stars.count)], ['LICENSE', a.license || 'Closed']] },
       description: `${a.name} by ${a.vendor}: independent AgentRank test results, how it's billed, licence and links. ${mine.length ? `${mine.length} published run(s).` : 'Not yet tested.'}`,
       jsonld: { '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: a.name, applicationCategory: 'DeveloperApplication', url: a.homepage, ...(a.license ? { license: a.license } : {}), author: { '@type': 'Organization', name: a.vendor } },
       body: `<p class="crumbs"><a href="${u('/agents/')}">Agents</a> /</p>
@@ -344,6 +357,7 @@ ${tasks.map((t) => `<a class="card wide" href="${u(`/tasks/${t.slug}/`)}"><span 
     const taskMd = readFileSync(join(ROOT, 'tasks', t.slug, 'workspace/TASK.md'), 'utf8');
     add(`/tasks/${t.slug}/`, page({
       path: `/tasks/${t.slug}/`, title: `Task #${t.number}: ${t.title} (AI coding agent benchmark)`,
+      og: { key: `task-${t.slug}`, kicker: `Benchmark task #${t.number}`, title: t.title, stats: [['HIDDEN TESTS', t.hiddenTestCount], ['VERIFIED RUNS', runs.filter((r) => r.task === t.slug && r.tier === 'agentrank').length], ['HARNESS', v?.ok ? 'Pass' : '—']] },
       description: `${t.summary} See which AI coding agents solve it, with full evidence.`,
       jsonld: { '@context': 'https://schema.org', '@type': 'Dataset', name: `AgentRank Task #${t.number}: ${t.title}`, description: t.summary, url: abs(`/tasks/${t.slug}/`), license: 'https://creativecommons.org/licenses/by/4.0/', creator: { '@type': 'Organization', name: 'AgentRank' } },
       body: `<p class="crumbs"><a href="${u('/tasks/')}">Tasks</a> /</p>
@@ -386,6 +400,7 @@ function runPages() {
     const title = `${a.name} on Task #${t.number}: ${r.hidden.passed}/${r.hidden.total} hidden tests`;
     add(`/runs/${r.id}/`, page({
       path: `/runs/${r.id}/`, title, noindex: r.tier !== 'agentrank',
+      og: { key: `run-${r.id}`, kicker: `${r.tier === 'agentrank' ? 'Verified run' : 'Community run'} · Task #${t.number}`, title: `${a.name}: ${r.hidden.passed}/${r.hidden.total} hidden tests`, stats: [['SCORE', `${r.score}%`], ['SOLVED', r.solved ? 'Yes' : 'No'], ['TIME', fmtDur(r.durationSec)]] },
       description: `${a.name} scored ${r.score}% on "${t.title}" (${r.solved ? 'solved' : 'not solved'}). Full diff, test output and log.`,
       body: `<p class="crumbs"><a href="${u(`/tasks/${t.slug}/`)}">Task #${t.number}</a> / <a href="${u(`/agents/${a.slug}/`)}">${esc(a.name)}</a> /</p>
 <h1>${esc(title)}</h1>
@@ -589,4 +604,5 @@ const indexable = Object.keys(pages).filter((p) => p !== '/404' && !(p.startsWit
 write('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${indexable.map((p) => `  <url><loc>${esc(abs(p))}</loc><lastmod>${BUILT.slice(0, 10)}</lastmod></url>`).join('\n')}\n</urlset>\n`);
 write('robots.txt', `User-agent: *\nAllow: /\nSitemap: ${abs('/sitemap.xml')}\n`);
 write('.nojekyll', '');
+write('og/manifest.json', JSON.stringify(Object.values(ogs)));
 console.log(`Built ${Object.keys(pages).length} pages, ${runs.length} runs, ${agents.filter((a) => a.stars.live).length}/${agents.length} live star counts → dist/`);

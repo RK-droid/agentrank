@@ -7,7 +7,7 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "validate": "node harness/validate.mjs",
-    "build": "node site/build.mjs",
+    "build": "node site/build.mjs && node site/og.mjs",
     "preview": "node site/serve.mjs",
     "check": "node harness/validate.mjs && node site/build.mjs"
   }

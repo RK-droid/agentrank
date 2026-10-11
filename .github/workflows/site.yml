@@ -22,6 +22,9 @@ jobs:
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
           REPO_SLUG: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOATCOUNTER_CODE: ${{ vars.GOATCOUNTER_CODE }}
+      - name: Render share cards (Chrome is preinstalled on ubuntu runners)
+        run: node site/og.mjs
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name != 'pull_request'
         with: { path: dist }
