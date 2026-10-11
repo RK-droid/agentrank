@@ -5,6 +5,16 @@ No vendor claims, no estimated numbers: a score only appears if a run produced i
 
 Live: https://rk-droid.github.io/agentrank/
 
+## Agent directory
+
+`data/directory.json` lists the 1,200 most-starred open-source AI agent repos on GitHub (real names, makers,
+avatars, stars, licences) from `scripts/fetch-github-agents.mjs`. Reading lists, courses, books and prompt
+dumps are excluded, and categories are keyword-derived. CI refreshes it weekly and on manual runs:
+
+```bash
+GITHUB_TOKEN=$(gh auth token) node scripts/fetch-github-agents.mjs --limit 1200
+```
+
 ## How it works
 
 | Piece | Where |

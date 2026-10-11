@@ -1,0 +1,23 @@
+name: Claim a listing
+description: You maintain an agent in the AgentRank directory and want to claim, correct or enrich its profile.
+title: "Claim: "
+labels: [claim]
+body:
+  - type: input
+    id: repo
+    attributes: { label: GitHub repository URL }
+    validations: { required: true }
+  - type: dropdown
+    id: role
+    attributes: { label: Your role, options: [Owner / maintainer, Contributor, Employee of the owning org] }
+    validations: { required: true }
+  - type: textarea
+    id: changes
+    attributes: { label: What should we add or fix? (headless command for benchmarking, pricing, website, category...) }
+  - type: checkboxes
+    id: proof
+    attributes:
+      label: Verification
+      options:
+        - label: I'm opening this issue from a GitHub account with write access to the repo (we check this)
+          required: true

@@ -17,6 +17,11 @@ jobs:
         run: node harness/validate.mjs
       - name: Re-verify every published run (re-apply diff, re-score, must match the record)
         run: node harness/verify.mjs
+      - name: Refresh GitHub agent directory (weekly schedule / manual runs)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: node scripts/fetch-github-agents.mjs --limit 1200
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build site
         run: SITE_URL="https://$(echo "$OWNER" | tr '[:upper:]' '[:lower:]').github.io/$REPO_NAME" node site/build.mjs
         env:
