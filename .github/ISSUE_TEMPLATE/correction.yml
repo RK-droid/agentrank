@@ -1,0 +1,13 @@
+name: Correction
+description: Report an incorrect fact, broken link or scoring problem.
+title: "Correction: "
+labels: [correction]
+body:
+  - type: input
+    id: page
+    attributes: { label: Page URL }
+    validations: { required: true }
+  - type: textarea
+    id: wrong
+    attributes: { label: What's wrong, and the source showing the correct information }
+    validations: { required: true }

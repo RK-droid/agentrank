@@ -1,0 +1,14 @@
+{
+  "name": "agentrank",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Independent, evidence-first benchmarks of AI coding agents.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "validate": "node harness/validate.mjs",
+    "build": "node site/build.mjs",
+    "preview": "node site/serve.mjs",
+    "check": "node harness/validate.mjs && node site/build.mjs"
+  }
+}

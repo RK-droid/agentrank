@@ -1,0 +1,13 @@
+{
+  "slug": "auth-fix-01",
+  "number": 1,
+  "title": "Fix a broken authentication flow",
+  "category": "Debugging",
+  "summary": "A small Node.js auth module ships with six user-reported bugs: broken password checks, case-sensitive emails, sessions that die instantly, logout that doesn't log out, account takeover via re-registration, and an off-by-one lockout. The agent gets the bug reports and 3 visible tests; scoring uses a 19-test hidden suite.",
+  "skills": ["Reading bug reports", "Debugging", "Security fundamentals", "Not breaking the public API"],
+  "language": "JavaScript (Node.js 20+, zero dependencies)",
+  "hiddenTestCount": 19,
+  "visibleTestCount": 3,
+  "timeoutSec": 1800,
+  "published": "2026-10-11"
+}

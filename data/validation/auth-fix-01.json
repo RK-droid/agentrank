@@ -1,0 +1,182 @@
+{
+  "task": "auth-fix-01",
+  "date": "2026-10-11T08:57:33.515Z",
+  "ok": true,
+  "environment": {
+    "node": "v22.17.0",
+    "os": "darwin 23.0.0",
+    "harness": "1.0.0"
+  },
+  "baseline": {
+    "score": 21.1,
+    "solved": false,
+    "hiddenPassed": 4,
+    "hiddenTotal": 19,
+    "visiblePassed": 1,
+    "visibleTotal": 3,
+    "tests": [
+      {
+        "name": "H01 register then login with same password succeeds",
+        "pass": false
+      },
+      {
+        "name": "H02 login is case-insensitive and trims whitespace",
+        "pass": false
+      },
+      {
+        "name": "H03 verify returns the normalized email",
+        "pass": false
+      },
+      {
+        "name": "H04 session is valid immediately after login",
+        "pass": false
+      },
+      {
+        "name": "H05 session is still valid at 59 minutes",
+        "pass": false
+      },
+      {
+        "name": "H06 session expires after 1 hour",
+        "pass": false
+      },
+      {
+        "name": "H07 logout invalidates the token",
+        "pass": false
+      },
+      {
+        "name": "H08 logout leaves other sessions intact",
+        "pass": false
+      },
+      {
+        "name": "H09 duplicate registration throws EMAIL_TAKEN and keeps the original password",
+        "pass": false
+      },
+      {
+        "name": "H10 duplicate check is case-insensitive",
+        "pass": false
+      },
+      {
+        "name": "H11 sixth attempt after 5 failures is LOCKED even with the right password",
+        "pass": false
+      },
+      {
+        "name": "H12 four failures then the right password still works",
+        "pass": false
+      },
+      {
+        "name": "H13 lockout lifts after the 15 minute window",
+        "pass": false
+      },
+      {
+        "name": "H14 lockout counts across email casing",
+        "pass": false
+      },
+      {
+        "name": "H15 lockout is per account",
+        "pass": false
+      },
+      {
+        "name": "H16 unknown user gets INVALID_CREDENTIALS",
+        "pass": true
+      },
+      {
+        "name": "H17 validation still rejects weak passwords and invalid emails",
+        "pass": true
+      },
+      {
+        "name": "H18 passwords are not stored in plaintext",
+        "pass": true
+      },
+      {
+        "name": "H19 unknown token verifies to null",
+        "pass": true
+      }
+    ]
+  },
+  "reference": {
+    "score": 100,
+    "solved": true,
+    "hiddenPassed": 19,
+    "hiddenTotal": 19,
+    "visiblePassed": 3,
+    "visibleTotal": 3,
+    "tests": [
+      {
+        "name": "H01 register then login with same password succeeds",
+        "pass": true
+      },
+      {
+        "name": "H02 login is case-insensitive and trims whitespace",
+        "pass": true
+      },
+      {
+        "name": "H03 verify returns the normalized email",
+        "pass": true
+      },
+      {
+        "name": "H04 session is valid immediately after login",
+        "pass": true
+      },
+      {
+        "name": "H05 session is still valid at 59 minutes",
+        "pass": true
+      },
+      {
+        "name": "H06 session expires after 1 hour",
+        "pass": true
+      },
+      {
+        "name": "H07 logout invalidates the token",
+        "pass": true
+      },
+      {
+        "name": "H08 logout leaves other sessions intact",
+        "pass": true
+      },
+      {
+        "name": "H09 duplicate registration throws EMAIL_TAKEN and keeps the original password",
+        "pass": true
+      },
+      {
+        "name": "H10 duplicate check is case-insensitive",
+        "pass": true
+      },
+      {
+        "name": "H11 sixth attempt after 5 failures is LOCKED even with the right password",
+        "pass": true
+      },
+      {
+        "name": "H12 four failures then the right password still works",
+        "pass": true
+      },
+      {
+        "name": "H13 lockout lifts after the 15 minute window",
+        "pass": true
+      },
+      {
+        "name": "H14 lockout counts across email casing",
+        "pass": true
+      },
+      {
+        "name": "H15 lockout is per account",
+        "pass": true
+      },
+      {
+        "name": "H16 unknown user gets INVALID_CREDENTIALS",
+        "pass": true
+      },
+      {
+        "name": "H17 validation still rejects weak passwords and invalid emails",
+        "pass": true
+      },
+      {
+        "name": "H18 passwords are not stored in plaintext",
+        "pass": true
+      },
+      {
+        "name": "H19 unknown token verifies to null",
+        "pass": true
+      }
+    ]
+  }
+}

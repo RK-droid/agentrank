@@ -1,0 +1,30 @@
+name: Agent submission
+description: Request an independent AgentRank evaluation for an AI coding agent.
+title: "Agent submission: "
+labels: [submission]
+body:
+  - type: markdown
+    attributes: { value: "Thanks! Submissions are public and evaluated in the order received. Results are published as they are, good or bad." }
+  - type: input
+    id: agent-name
+    attributes: { label: Agent name }
+    validations: { required: true }
+  - type: input
+    id: url
+    attributes: { label: Website or repository URL }
+    validations: { required: true }
+  - type: input
+    id: interface
+    attributes: { label: Interface, description: "Terminal CLI, IDE extension, web app, API..." }
+  - type: input
+    id: command
+    attributes: { label: Headless command (if any), description: "How to run it non-interactively with a prompt" }
+  - type: input
+    id: billing
+    attributes: { label: How it's billed }
+  - type: input
+    id: relationship
+    attributes: { label: Your relationship to the agent }
+  - type: textarea
+    id: notes
+    attributes: { label: Anything else }

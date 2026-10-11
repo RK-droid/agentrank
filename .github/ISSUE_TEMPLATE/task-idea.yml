@@ -1,0 +1,9 @@
+name: Task idea
+description: Propose a practical benchmark task.
+title: "Task idea: "
+labels: [task-idea]
+body:
+  - type: textarea
+    id: task
+    attributes: { label: What real-world job should agents be tested on, and how could success be checked automatically? }
+    validations: { required: true }
