@@ -1,0 +1,12 @@
+[
+  { "title": "Give the agent a way to check its own work", "body": "Agents get much better when they can run something that says pass or fail: a test suite, a linter, a build command. Put the exact command in your prompt (\"run npm test until it passes\") and the agent can fix its own mistakes before you ever see them." },
+  { "title": "Keep a project instructions file", "body": "Most coding agents read a project file such as CLAUDE.md or AGENTS.md on every run. Put your stack, conventions, commands and \"never do X\" rules there once instead of repeating them in every prompt." },
+  { "title": "Ask for a plan before edits", "body": "For anything bigger than a one-line fix, ask the agent to outline its plan first and approve it. It's the cheapest moment to catch a wrong approach, before tokens are spent on code you'll throw away." },
+  { "title": "Small tasks beat big ones", "body": "One well-scoped task (\"fix the logout bug, here's how to reproduce it\") succeeds far more often than \"improve the auth system\". Split big goals into steps you can verify one at a time." },
+  { "title": "Paste the real error", "body": "Give the agent the full error message, stack trace or failing output rather than a summary. The exact text is usually the fastest route to the cause." },
+  { "title": "Commit before you let an agent loose", "body": "Start every agent session from a clean git state. If the run goes sideways, one command gets you back, and the diff shows exactly what the agent changed." },
+  { "title": "Use cheaper models for cheaper work", "body": "Bring-your-own-key agents let you pick the model. Use a fast, cheap model for boilerplate, renames and docs, and save the expensive model for debugging and design decisions." },
+  { "title": "Measure cost per solved task, not per run", "body": "An agent that costs twice as much per run but solves the task first time is cheaper than one that needs three attempts. Track what you spend per working result." },
+  { "title": "Multi-agent setups need a referee", "body": "When several agents work together, give one of them (or a test) the job of checking the others' output. Without a verification step, agents happily agree on wrong answers." },
+  { "title": "Describe the outcome, not the steps", "body": "For writing, design and marketing agents, say who it's for, what it should achieve and what good looks like, then show one example. You'll get better work than with a step-by-step recipe." }
+]

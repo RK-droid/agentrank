@@ -4,7 +4,7 @@ on:
   pull_request:
   schedule: [{ cron: '0 6 * * 1' }]   # weekly rebuild refreshes live GitHub star counts
   workflow_dispatch:
-permissions: { contents: read, pages: write, id-token: write }
+permissions: { contents: write, pages: write, id-token: write }
 concurrency: { group: pages, cancel-in-progress: false }
 jobs:
   build:
@@ -19,9 +19,16 @@ jobs:
         run: node harness/verify.mjs
       - name: Refresh GitHub agent directory (weekly schedule / manual runs)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: node scripts/fetch-github-agents.mjs --limit 1200
+        run: node scripts/fetch-github-agents.mjs --limit 1200 && node scripts/newsletter.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Save refreshed data (weekly growth history + newsletter archive)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "agentrank-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/directory.json data/newsletter
+          git diff --cached --quiet || { git commit -m "Weekly data refresh $(date -u +%F)" && git push; }
       - name: Build site
         run: SITE_URL="https://$(echo "$OWNER" | tr '[:upper:]' '[:lower:]').github.io/$REPO_NAME" node site/build.mjs
         env:
@@ -31,6 +38,7 @@ jobs:
           REPO_SLUG: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOATCOUNTER_CODE: ${{ vars.GOATCOUNTER_CODE }}
+          BUTTONDOWN_USERNAME: ${{ vars.BUTTONDOWN_USERNAME }}
       - name: Render share cards (Chrome is preinstalled on ubuntu runners)
         run: node site/og.mjs
       - uses: actions/upload-pages-artifact@v3

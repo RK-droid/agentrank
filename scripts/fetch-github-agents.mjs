@@ -19,7 +19,14 @@ const QUERIES = [
   'topic:ai-coding-assistant', 'topic:browser-agent', 'topic:mcp', 'topic:agent-framework', 'topic:autogpt',
   '"ai agent" in:name,description', '"coding agent" in:name,description', '"llm agent" in:name,description',
   '"autonomous agent" in:name,description', '"agentic" in:name,description', '"multi-agent" in:name,description',
-].map((q) => `${q} stars:>=200 fork:false archived:false`);
+  // niche coverage
+  'topic:vibe-coding', '"vibe coding" in:name,description', '"app builder" agent in:name,description',
+  '"design agent" in:name,description', 'agent figma in:name,description,topics', 'agent "ui design" in:name,description',
+  'agent copywriting in:name,description,topics', '"writing agent" in:name,description', 'agent "content writing" in:name,description',
+  'agent "video editing" in:name,description', 'agent "video editor" in:name,description', 'agent "photo editing" in:name,description',
+  '"marketing agent" in:name,description', 'agent seo in:name,description,topics', 'agent "social media" in:name,description',
+  'agent "decision making" in:name,description', 'agent "decision support" in:name,description', '"deep research" agent in:name,description',
+].map((q) => `${q} stars:>=100 fork:false archived:false`);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function gh(url) {
@@ -39,24 +46,7 @@ async function gh(url) {
   throw new Error(`gave up on ${url}`);
 }
 
-// Keyword categories (first match wins). Shown on the site as "auto-categorised".
-const CATS = [
-  ['Skills & plugins', /\b(skills?\b|plugins?\b|mcp server|extensions?\b|claude\.md|agents\.md|subagents?)/i],
-  ['Agent builders & platforms', /\b(no-?code|low-?code|workflow automation|visual builder|build(ing)? (ai )?agents|agent platform|llmops|rag pipeline|deploy(ing)? (ai )?agents)/i],
-  ['Coding', /\b(cod(e|ing)|developer|programm|software engineer|ide\b|vscode|terminal|cli\b|devin|swe\b|pull request|refactor)/i],
-  ['Browser & computer use', /\b(browser|web ?automation|computer[- ]use|desktop automation|playwright|selenium|scrap)/i],
-  ['Research', /\b(research|deep ?research|search engine|paper|literature|knowledge)/i],
-  ['Data & analytics', /\b(data ?analy|sql|database|spreadsheet|bi\b|analytics|pandas)/i],
-  ['Voice & chat', /\b(voice|speech|realtime|phone|call|chatbot|assistant|telegram|discord|slack|whatsapp)/i],
-  ['Finance & trading', /\b(trad(e|ing)|financ|stock|crypto|defi|quant)/i],
-  ['Marketing & sales', /\b(marketing|seo|sales|lead|social media|content creat|ads?\b|outreach)/i],
-  ['Multi-agent & orchestration', /\b(multi[- ]?agent|orchestrat|swarm|crew|workflow|graph)/i],
-  ['Frameworks & SDKs', /\b(framework|sdk|library|toolkit|platform|infrastructure|runtime|protocol|mcp|server)/i],
-];
-const categorise = (r) => {
-  const text = `${r.name} ${r.description || ''} ${(r.topics || []).join(' ')}`;
-  return (CATS.find(([, re]) => re.test(text)) || ['General'])[0];
-};
+import { categorise } from './classify.mjs';
 
 // Not agents: reading lists, courses, books, prompt dumps, interview guides. These are excluded, not hidden.
 const NOT_AGENT = /(^awesome|awesome-)|curated (list|collection)|\ba (curated )?(list|collection) of\b|\btutorials?\b|\bcourse\b|\bbook\b|interview|cheat ?sheet|\bguide(s)?\b.*\b(papers|lessons|resources)|from scratch|system prompts|prompts? (library|collection|库)|面试|教程|提示词/i;
@@ -84,9 +74,15 @@ for (const a of curated) {
 
 const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const excluded = [...seen.values()].filter((r) => !isAgent(r)).length;
-const ranked = [...seen.values()].filter((r) => isAgent(r) && !pinned.has(r.id)).sort((a, b) => b.stargazers_count - a.stargazers_count).slice(0, LIMIT);
+const pool = [...seen.values()].filter((r) => isAgent(r) && !pinned.has(r.id)).sort((a, b) => b.stargazers_count - a.stargazers_count);
+const keep = new Set(pool.slice(0, LIMIT).map((r) => r.id));
+const PER_NICHE = 60; // every niche gets depth even if its repos are smaller than the overall cut
+const perCat = {};
+for (const r of pool) { const c = categorise(r); perCat[c] = (perCat[c] || 0) + 1; if (perCat[c] <= PER_NICHE) keep.add(r.id); }
+const ranked = pool.filter((r) => keep.has(r.id));
 const repos = [...ranked, ...[...seen.values()].filter((r) => pinned.has(r.id))];
-const prev = existsSync(OUT) ? Object.fromEntries(JSON.parse(readFileSync(OUT, 'utf8')).agents.map((a) => [a.repo, a])) : {};
+const prevFile = existsSync(OUT) ? JSON.parse(readFileSync(OUT, 'utf8')) : null;
+const prev = prevFile ? Object.fromEntries(prevFile.agents.map((a) => [a.repo, a])) : {};
 const agents = repos.map((r) => ({
   slug: slugify(`${r.owner.login}-${r.name}`),
   name: r.name,
@@ -106,5 +102,5 @@ const agents = repos.map((r) => ({
   pushedAt: r.pushed_at,
   owner: { login: r.owner.login, type: r.owner.type, url: r.owner.html_url, avatar: `${r.owner.avatar_url}${r.owner.avatar_url.includes('?') ? '&' : '?'}s=96` },
 }));
-writeFileSync(OUT, JSON.stringify({ fetched: new Date().toISOString(), source: 'GitHub REST API (search/repositories)', queries: QUERIES, excludedNonAgents: excluded, agents }, null, 1) + '\n');
+writeFileSync(OUT, JSON.stringify({ fetched: new Date().toISOString(), prevFetched: prevFile?.fetched || null, source: 'GitHub REST API (search/repositories)', queries: QUERIES, excludedNonAgents: excluded, agents }, null, 1) + '\n');
 console.log(`Wrote ${agents.length} agents (from ${seen.size} unique matches, ${excluded} non-agent resources excluded) → data/directory.json`);

@@ -1,0 +1,40 @@
+name: Sell your agent
+description: Apply to list a paid agent or agent setup in the AgentRank marketplace.
+title: "Sell: "
+labels: [marketplace]
+body:
+  - type: markdown
+    attributes: { value: "Listings are reviewed before going live. You keep your own checkout (Gumroad, Lemon Squeezy, Razorpay, Stripe…) and 100% of direct sales during launch." }
+  - type: input
+    id: name
+    attributes: { label: Agent name }
+    validations: { required: true }
+  - type: dropdown
+    id: niche
+    attributes: { label: Niche, options: [Vibe coding, Coding, Design, Copywriting & content, Editing, Marketing & sales, Decision making & research, Multi-agent setups, General assistants, Other] }
+    validations: { required: true }
+  - type: textarea
+    id: description
+    attributes: { label: What does it do, and for whom? (2-3 sentences) }
+    validations: { required: true }
+  - type: input
+    id: price
+    attributes: { label: "Price (e.g. $19 one-time, $9/month)" }
+    validations: { required: true }
+  - type: input
+    id: checkout
+    attributes: { label: Checkout / product page URL }
+    validations: { required: true }
+  - type: input
+    id: demo
+    attributes: { label: Demo video or screenshots URL }
+  - type: dropdown
+    id: pro
+    attributes: { label: Include in the Pro library (revenue share)?, options: [Yes, No, Tell me more] }
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Seller confirmations
+      options:
+        - label: I own or have the rights to sell this agent, and it doesn't contain malware or harvest user data without consent
+          required: true

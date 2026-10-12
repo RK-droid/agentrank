@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, rmSync
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scoreAll, WEIGHTS, PARTS } from './score.mjs';
+import { NICHES } from './niches.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = join(ROOT, 'dist');
@@ -89,7 +90,7 @@ function standings(taskSlug, tier = 'agentrank') {
 const verifiedRuns = runs.filter((r) => r.tier === 'agentrank');
 
 // ---------- layout ----------
-const NAV = [['/leaderboard/', 'Leaderboard'], ['/agents/', 'Agents'], ['/tasks/', 'Tasks'], ['/compare/', 'Compare'], ['/methodology/', 'Methodology']];
+const NAV = [['/agents/', 'Agents'], ['/trending/', 'Trending'], ['/leaderboard/', 'Leaderboard'], ['/marketplace/', 'Marketplace'], ['/costs/', 'Costs'], ['/newsletter/', 'Newsletter'], ['/pro/', 'Pro']];
 // Share-card specs, rendered to dist/og/<key>.png by site/og.mjs.
 const ogs = {};
 const OG_DEFAULT = { key: 'default', kicker: 'AgentRank', title: 'The database of verified AI agent performance', stats: [] };
@@ -139,7 +140,8 @@ ${body}
 <footer class="foot">
   <div class="wrap foot-in">
     <div><strong>AgentRank</strong> - independent, evidence-first evaluations of AI coding agents. Every number on this site links to the run that produced it.</div>
-    <div class="foot-links"><a href="${u('/methodology/')}">Methodology</a><a href="${u('/roadmap/')}">Roadmap</a><a href="${u('/api/')}">Open data</a><a href="${GH}">GitHub</a><a href="${GH}/issues/new?template=correction.yml">Report a correction</a><button class="theme" type="button" aria-label="Toggle dark mode" onclick="(function(){var d=document.documentElement,n=d.dataset.theme==='light'?'dark':'light';d.dataset.theme=n;try{localStorage.setItem('ar-theme',n)}catch(e){}})()">Theme</button></div>
+    ${signupBox('footer')}
+    <div class="foot-links"><a href="${u('/tasks/')}">Tasks</a><a href="${u('/compare/')}">Compare</a><a href="${u('/methodology/')}">Methodology</a><a href="${u('/roadmap/')}">Roadmap</a><a href="${u('/api/')}">Open data</a><a href="${GH}">GitHub</a><a href="${GH}/issues/new?template=correction.yml">Report a correction</a><button class="theme" type="button" aria-label="Toggle dark mode" onclick="(function(){var d=document.documentElement,n=d.dataset.theme==='light'?'dark':'light';d.dataset.theme=n;try{localStorage.setItem('ar-theme',n)}catch(e){}})()">Theme</button></div>
     <div class="muted small">Built ${esc(fmtDate(BUILT))}. Not affiliated with any agent vendor.</div>
   </div>
 </footer>
@@ -226,7 +228,12 @@ function home() {
     <label class="search-box"><span aria-hidden="true">⌕</span><input id="q" name="q" type="search" placeholder='"browser agent" or "langchain"' autocomplete="off" aria-label="Search agents"></label>
     <a class="btn btn-light" href="${u('/submit/')}">+ Submit agent</a>
   </form>
-  <p class="hero-links"><a href="${u('/leaderboard/')}">Leaderboard</a><a href="${u('/compare/')}">Compare</a><a href="${u('/api/')}">Open data</a></p>
+  <p class="hero-links"><a href="${u('/trending/')}">Trending</a><a href="${u('/marketplace/')}">Marketplace</a><a href="${u('/costs/')}">Costs</a><a href="${u('/newsletter/')}">Newsletter</a></p>
+</section>
+
+<section>
+  <div class="row-head"><h2>Trending by niche</h2><a href="${u('/trending/')}">All niches ›</a></div>
+  <p class="niche-tabs">${NICHES.map((n) => `<a href="${u(`/trending/${n.slug}/`)}">${esc(n.name)} <span class="muted">${fmtInt(trendingIn(n).rows.length)}</span></a>`).join('')}</p>
 </section>
 
 <section>
@@ -712,8 +719,129 @@ function badge(label, value, color) {
 }
 
 // ---------- write ----------
+// ---------- niches, trending, costs, newsletter, marketplace, pro ----------
+
+const DAY_MS = 864e5;
+const weekGain = (d) => d.starsPrev != null ? d.stars - d.starsPrev : null;
+const perDay = (d) => d.createdAt ? d.stars / Math.max(30, (Date.parse(BUILT) - Date.parse(d.createdAt)) / DAY_MS) : 0;
+/** Trending order: stars gained since the last weekly snapshot when we have it, else lifetime stars/day. */
+function trendingIn(niche) {
+  const list = listings().filter((d) => niche.cats.includes(d.category));
+  const haveWeekly = list.some((d) => weekGain(d) != null && weekGain(d) !== 0);
+  return { haveWeekly, rows: [...list].sort((a, b) => haveWeekly ? (weekGain(b) ?? -1) - (weekGain(a) ?? -1) : perDay(b) - perDay(a)) };
+}
+const trendTable = (rows, haveWeekly, limit) => `<div class="table-wrap flat"><table class="board"><thead><tr><th>#</th><th>Agent</th><th>Made by</th><th>${haveWeekly ? `Stars since ${dirData.prevFetched ? esc(fmtDate(dirData.prevFetched).replace(/, \d{4}$/, '')) : 'last refresh'}` : 'Stars / day'}</th><th>Score</th><th>Stars</th></tr></thead><tbody>${rows.slice(0, limit).map((d, i) => `<tr><td class="rank">${medal(i)}</td><td>${agentCell(d, d.description)}</td><td>${makerCell(d.owner)}</td><td class="num strong">${haveWeekly ? `${weekGain(d) > 0 ? '+' : ''}${fmtInt(weekGain(d) ?? 0)}` : perDay(d).toFixed(perDay(d) < 10 ? 1 : 0)}</td><td>${scorePill(d.arScore)}</td><td class="num">${fmtNum(d.stars)}</td></tr>`).join('')}</tbody></table></div>`;
+
+function trendingPages() {
+  const cards = NICHES.map((n) => {
+    const { rows } = trendingIn(n);
+    const top = rows.slice(0, 3);
+    return `<a class="card niche" href="${u(`/trending/${n.slug}/`)}"><div class="card-top"><strong>${esc(n.name)}</strong><span class="muted small">${fmtInt(rows.length)} agents</span></div><span class="small muted">${esc(n.blurb)}</span><span class="niche-top">${top.map((d) => `<span class="niche-item">${avImg(d.owner, 'xs')}${esc(d.name)}</span>`).join('')}</span></a>`;
+  }).join('');
+  add('/trending/', page({
+    path: '/trending/', title: 'Trending AI agents by niche',
+    description: 'The fastest-rising open-source AI agents for vibe coding, coding, design, copywriting, editing, marketing, decision-making and multi-agent setups.',
+    og: { key: 'trending', kicker: 'Trending', title: 'Trending AI agents by niche', stats: NICHES.slice(0, 3).map((n) => [n.name.toUpperCase().slice(0, 14), trendingIn(n).rows.length]) },
+    body: `<h1>Trending by niche</h1><p class="lede">Which agents are rising fastest in each kind of work. "Trending" means stars gained since the previous refresh. The GitHub data refreshes every Monday. Before the first weekly comparison exists, it falls back to lifetime stars per day. Niches are auto-categorised.</p>
+<div class="cards">${cards}</div>`,
+  }));
+  for (const n of NICHES) {
+    const { rows, haveWeekly } = trendingIn(n);
+    add(`/trending/${n.slug}/`, page({
+      path: `/trending/${n.slug}/`, title: `Trending ${n.name} AI agents`,
+      description: `The fastest-rising ${n.name.toLowerCase()} AI agents on GitHub right now, with makers, stars and AgentRank Scores. ${fmtInt(rows.length)} agents tracked.`,
+      og: { key: `trending-${n.slug}`, kicker: `Trending · ${n.name}`, title: rows[0] ? `#1 right now: ${rows[0].name}` : `Trending ${n.name} agents`, stats: [['AGENTS', fmtInt(rows.length)], ['TOP SCORE', rows.length ? Math.max(...rows.map((d) => d.arScore)) : '—']] },
+      body: `<p class="crumbs"><a href="${u('/trending/')}">Trending</a> /</p><h1>Trending: ${esc(n.name)}</h1><p class="lede">${esc(n.blurb)}</p>
+<p class="niche-tabs">${NICHES.map((m) => `<a href="${u(`/trending/${m.slug}/`)}"${m.slug === n.slug ? ' aria-current="page"' : ''}>${esc(m.name)}</a>`).join('')}</p>
+${rows.length ? `<div class="leader flat-top">${trendTable(rows, haveWeekly, 50)}</div><p class="muted small">${haveWeekly ? `Ranked by stars gained since the previous refresh${dirData.prevFetched ? ` (${esc(fmtDate(dirData.prevFetched))})` : ''}. The data refreshes every Monday.` : 'Ranked by lifetime stars per day. Weekly gains appear after the next weekly refresh.'} <a href="${u(`/agents/?cat=${encodeURIComponent(n.cats[0])}`)}">See all ${fmtInt(rows.length)} in the directory →</a></p>` : `<div class="empty"><p>No agents in this niche yet. <a href="${u('/submit/')}">Submit one</a>.</p></div>`}`,
+    }));
+  }
+}
+
+function costsPage() {
+  const rows = tasks.flatMap((t) => [...standings(t.slug), ...standings(t.slug, 'community')].map((s) => ({ t, s })));
+  const measured = rows.filter(({ s }) => s.cost != null && s.solveRate > 0).map(({ t, s }) => ({ t, s, perSolve: s.cost / s.solveRate })).sort((a, b) => a.perSolve - b.perSolve);
+  add('/costs/', page({
+    path: '/costs/', title: 'What AI coding agents cost, and which are worth it',
+    description: 'How each AI coding agent is billed, plus measured cost per solved task from reproducible runs. Find the cheapest agent that actually gets the job done.',
+    body: `<h1>Costs &amp; value</h1>
+<p class="lede">"Cheapest" means nothing if it fails. We compare agents by <strong>cost per solved task</strong>: what you'd actually pay, on average, to get one working result. Numbers come only from measured runs, with the cost source printed next to each.</p>
+<section class="leader"><div class="leader-head"><h2>Cost per solved task (measured)</h2></div>
+${measured.length ? `<div class="table-wrap flat"><table class="board"><thead><tr><th>#</th><th>Agent</th><th>Task</th><th>Cost per solve</th><th>Median cost / run</th><th>Solve rate</th><th>Score</th></tr></thead><tbody>${measured.map(({ t, s, perSolve }, i) => `<tr><td class="rank">${medal(i)}</td><td>${agentCell(s.agent, s.agent.vendor)}</td><td class="small">Task #${t.number}</td><td class="num strong">${fmtUsd(perSolve)}</td><td class="num">${fmtUsd(s.cost)}</td><td class="num">${Math.round(s.solveRate * 100)}%</td><td class="num">${s.score.toFixed(0)}%</td></tr>`).join('')}</tbody></table></div>
+<p class="small muted">Cost per solve = median cost per run ÷ solve rate. Expensive-but-worth-it shows up as a high cost per run with a low cost per solve.</p>` : `<div class="panel-empty"><strong>No measured costs yet.</strong> This table fills in automatically once runs with recorded costs are published. Every number will link to its run and cost source. We won't estimate. <a href="${u('/submit/#run')}">Submit a run with its cost →</a></div>`}
+</section>
+<section><h2>How each agent is billed</h2><p class="muted small">Billing models change, so always confirm on the vendor's page. Links go straight to the official pricing.</p>
+<div class="table-wrap"><table><thead><tr><th>Agent</th><th>How you pay</th><th>Client</th><th>Models</th><th></th></tr></thead><tbody>
+${agents.map((a) => `<tr><td>${agentCell(a, a.vendor)}</td><td class="small">${esc(a.billing)}</td><td class="small">${a.openSource ? `Open source (${esc(a.license)})` : 'Proprietary'}</td><td class="small">${esc(a.models)}</td><td><a href="${esc(a.pricingUrl)}" rel="nofollow">Pricing ↗</a></td></tr>`).join('')}
+</tbody></table></div></section>
+<section class="grid2">
+<div class="panel"><h2>Cheapest way to start</h2><p>Open-source, bring-your-own-key agents (${agents.filter((a) => a.openSource && /bring your own|BYO/i.test(a.billing + a.models)).map((a) => esc(a.name)).join(', ')}) cost nothing beyond model usage, and you can point them at cheaper models. Subscription agents trade a flat fee for predictable spend.</p></div>
+<div class="panel"><h2>Best for general tasks?</h2><p>For everyday, non-coding work, see <a href="${u('/trending/general/')}">general assistants</a> and <a href="${u('/trending/decision-making/')}">research &amp; decision-making</a> agents. Task benchmarks for these categories are on the <a href="${u('/roadmap/')}">roadmap</a>.</p></div>
+</section>`,
+  }));
+}
+
+// Newsletter: issues are JSON snapshots written weekly by scripts/newsletter.mjs and committed by CI.
+const issues = existsSync(join(ROOT, 'data/newsletter')) ? readdirSync(join(ROOT, 'data/newsletter')).filter((f) => f.endsWith('.json')).map((f) => readJson(join(ROOT, 'data/newsletter', f))).sort((a, b) => b.date.localeCompare(a.date)) : [];
+const BD = process.env.BUTTONDOWN_USERNAME || '';
+function signupBox(context = 'footer') {
+  return `<div class="signup"><div><strong>The AgentRank Weekly</strong><span class="muted small">New agents, niche risers, tips and tricks, and what's coming next. Free, once a week.</span></div>
+${BD ? `<form class="signup-form" action="https://buttondown.com/api/emails/embed-subscribe/${esc(BD)}" method="post" target="_blank"><input type="email" name="email" required placeholder="you@email.com" aria-label="Email address"><input type="hidden" name="tag" value="${esc(context)}"><button class="btn btn-light" type="submit">Subscribe</button></form>` : `<p class="signup-form"><a class="btn btn-light" href="${u('/newsletter/')}">Read the latest issue</a> <a class="btn btn-ghost" href="${u('/feed.xml')}">RSS</a></p>`}</div>`;
+}
+function issueBody(iss) {
+  const sec = (title, list, fmt) => list?.length ? `<h2>${title}</h2><ol class="issue-list">${list.map(fmt).join('')}</ol>` : '';
+  const line = (d, extra) => `<li><a href="${u(`/agents/${d.slug}/`)}"><strong>${esc(d.name)}</strong></a> <span class="muted">by ${esc(d.owner)}</span> · ${extra}<br><span class="small">${esc(d.description)}</span></li>`;
+  return `${sec('New on AgentRank this week', iss.newAgents, (d) => line(d, `${fmtNum(d.stars)} stars · ${esc(d.category)}`))}
+${(iss.niches || []).length ? `<h2>Rising in each niche</h2>${iss.niches.map((n) => `<h3>${esc(n.name)}</h3><ol class="issue-list">${n.top.map((d) => line(d, `${d.gain != null ? `+${fmtInt(d.gain)} stars since last refresh` : `${fmtNum(d.stars)} stars`} · score ${d.arScore}`)).join('')}</ol>`).join('')}` : ''}
+${iss.tip ? `<h2>Tip of the week: ${esc(iss.tip.title)}</h2><p>${esc(iss.tip.body)}</p>` : ''}
+${iss.upcoming?.length ? `<h2>Coming up</h2><ul>${iss.upcoming.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}`;
+}
+function newsletterPages() {
+  add('/newsletter/', page({
+    path: '/newsletter/', title: 'The AgentRank Weekly: new AI agents, tips and trends',
+    description: 'A free weekly newsletter covering new AI agents, the fastest risers in each niche, tips and tricks to get more out of agents, and what is coming next.',
+    body: `<h1>The AgentRank Weekly</h1><p class="lede">Every week: new agents worth knowing, the biggest risers in each niche, one practical tip to get better results from agents, and what's coming up. Generated from the same verified data as the site.</p>
+${signupBox('newsletter-page')}
+<section><h2>Issues</h2>${issues.length ? `<ul class="issue-index">${issues.map((iss) => `<li><a href="${u(`/newsletter/${iss.date}/`)}"><strong>${esc(iss.title)}</strong></a> <span class="muted small">${esc(fmtDate(iss.date))}</span></li>`).join('')}</ul>` : '<p class="muted">The first issue goes out with the next weekly refresh.</p>'}</section>`,
+  }));
+  for (const iss of issues) add(`/newsletter/${iss.date}/`, page({
+    path: `/newsletter/${iss.date}/`, title: iss.title, description: iss.summary,
+    body: `<p class="crumbs"><a href="${u('/newsletter/')}">Newsletter</a> /</p><h1>${esc(iss.title)}</h1><p class="muted">${esc(fmtDate(iss.date))}</p><div class="prose issue">${issueBody(iss)}</div>${signupBox('issue')}`,
+  }));
+}
+const feedXml = () => `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>The AgentRank Weekly</title><link>${esc(abs('/newsletter/'))}</link><description>New AI agents, niche risers, tips and what's next.</description>
+${issues.map((iss) => `<item><title>${esc(iss.title)}</title><link>${esc(abs(`/newsletter/${iss.date}/`))}</link><guid>${esc(abs(`/newsletter/${iss.date}/`))}</guid><pubDate>${new Date(iss.date).toUTCString()}</pubDate><description>${esc(iss.summary)}</description></item>`).join('\n')}
+</channel></rss>`;
+
+// Marketplace: listings are data/marketplace.json entries added by reviewed PR. Sellers keep their own checkout.
+const market = existsSync(join(ROOT, 'data/marketplace.json')) ? readJson(join(ROOT, 'data/marketplace.json')) : [];
+function marketplacePages() {
+  const sellIssue = `${GH}/issues/new?template=sell.yml`;
+  add('/marketplace/', page({
+    path: '/marketplace/', title: 'AI agent marketplace: buy and sell paid agents',
+    description: 'Buy ready-made AI agents for design, copywriting, marketing, coding and more, or sell your own agent to the AgentRank audience.',
+    body: `<section class="hero"><div class="hero-mark"><span class="star" aria-hidden="true">★</span> Marketplace</div><h1>Buy and sell AI agents</h1><p class="lede">Ready-made agents and agent setups from independent builders, for design, copywriting, marketing, editing, coding and more. Builders keep their own checkout, so you pay them directly.</p><p><a class="btn btn-light" href="${sellIssue}">+ Sell your agent</a> <a class="btn btn-ghost" href="${u('/pro/')}">Pro &amp; Featured</a></p></section>
+${market.length ? `<div class="cards">${market.map((m) => `<a class="card" href="${esc(m.url)}" rel="nofollow sponsored">${m.featured ? '<span class="corner ok">FEATURED</span>' : ''}<div class="card-head"><img class="av" src="https://github.com/${esc(m.seller)}.png?size=96" alt="" width="40" height="40" loading="lazy"><div><strong>${esc(m.name)}</strong><span class="sub">by ${esc(m.seller)} · ${esc(m.niche)}</span></div></div><span class="small">${esc(m.description)}</span><div class="metrics"><div><span class="k">PRICE</span><span class="v">${esc(m.price)}</span></div><div><span class="k">PRO</span><span class="v">${m.inPro ? 'Included' : '—'}</span></div><div><span class="k">TYPE</span><span class="v">${esc(m.type || 'Agent')}</span></div></div></a>`).join('')}</div>`
+  : `<div class="empty"><h3>Seller applications are open.</h3><p>The first paid agents go live here after review. Founding sellers get Featured placement free for their first month.</p><p><a class="btn" href="${sellIssue}">Apply to sell</a></p></div>`}
+<section class="grid2"><div class="panel"><h2>For buyers</h2><ul><li>Every listing is reviewed before it appears.</li><li>You buy from the seller through their own checkout (Gumroad, Lemon Squeezy, Razorpay, Stripe…).</li><li><strong>Pro</strong> members get access to every agent in the Pro library, and sellers choose whether to opt in.</li><li>Report a listing and we'll review it within 48 hours.</li></ul></div>
+<div class="panel"><h2>For sellers</h2><ul><li>Listing is free during launch.</li><li>Keep 100% of direct sales: you use your own checkout.</li><li>Opt in to the Pro library and earn a share of Pro revenue based on usage.</li><li>Get your free AgentRank Score badge, plus the Featured placement on the homepage, niche pages and newsletter.</li></ul></div></section>`,
+  }));
+  add('/pro/', page({
+    path: '/pro/', title: 'AgentRank Pro and Featured plans',
+    description: 'AgentRank Pro for people who use agents, and Featured for people who build and sell them.',
+    body: `<h1>Plans</h1><p class="lede">Browsing, scores, trending and the newsletter stay free forever. Paid plans are launching soon. Join the newsletter to get early-access pricing.</p>
+<div class="plans">
+<div class="plan"><h2>Free</h2><p class="price">$0</p><ul><li>All 1,000+ agent profiles &amp; scores</li><li>Trending by niche</li><li>Leaderboards &amp; benchmark evidence</li><li>Weekly newsletter</li></ul></div>
+<div class="plan hot"><span class="corner ok">MOST POPULAR</span><h2>Pro</h2><p class="price">$12<span class="muted small">/month</span></p><ul><li>Access to the Pro library of paid agents (seller opt-in)</li><li>Head-to-head tests of agents on your own task</li><li>Weekly trend alerts for your niches</li><li>Full data export and API</li></ul><p class="small muted">Launching soon</p></div>
+<div class="plan"><h2>Featured</h2><p class="price">$49<span class="muted small">/month</span></p><ul><li>For agent builders and sellers</li><li>Featured spot on the homepage, your niche page and the newsletter</li><li>Verified listing with claimed profile</li><li>Release re-tests and score history</li></ul><p class="small muted">Featured placement never changes scores or rankings</p></div>
+</div>
+${signupBox('pro-waitlist')}`,
+  }));
+}
+
 await liveStars();
-home(); leaderboard(); agentPages(); taskPages(); runPages(); comparePages(); methodology(); submit(); roadmap(); apiPage();
+home(); leaderboard(); agentPages(); trendingPages(); costsPage(); newsletterPages(); marketplacePages(); taskPages(); runPages(); comparePages(); methodology(); submit(); roadmap(); apiPage();
 add('/404', page({ path: '/404.html', title: 'Not found', description: 'Page not found.', noindex: true, body: `<h1>Not found</h1><p>That page doesn't exist. Try the <a href="${u('/leaderboard/')}">leaderboard</a> or the <a href="${u('/agents/')}">agents</a>.</p>` }));
 
 rmSync(DIST, { recursive: true, force: true });
@@ -734,6 +862,7 @@ write('api/v1/directory.json', JSON.stringify({ generated: BUILT, fetched: dirDa
 write('api/v1/runs.json', JSON.stringify({ generated: BUILT, runs }, null, 2));
 write('api/v1/leaderboard.json', JSON.stringify({ generated: BUILT, tasks: tasks.map((t) => ({ task: t.slug, standings: standings(t.slug).map((s, i) => ({ rank: i + 1, agent: s.agent.slug, score: s.score, solveRate: s.solveRate, medianDurationSec: s.duration, medianCostUsd: s.cost, runs: s.runs.map((r) => r.id) })) })) }, null, 2));
 const indexable = Object.keys(pages).filter((p) => p !== '/404' && !(p.startsWith('/runs/') && runs.find((r) => p.includes(r.id))?.tier !== 'agentrank' && !ciOk(runs.find((r) => p.includes(r.id)))));
+write('feed.xml', feedXml());
 write('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${indexable.map((p) => `  <url><loc>${esc(abs(p))}</loc><lastmod>${BUILT.slice(0, 10)}</lastmod></url>`).join('\n')}\n</urlset>\n`);
 write('robots.txt', `User-agent: *\nAllow: /\nSitemap: ${abs('/sitemap.xml')}\n`);
 write('.nojekyll', '');
