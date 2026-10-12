@@ -236,12 +236,12 @@ function home() {
 
 <section>
   <div class="row-head"><h2>Most starred agents</h2><a href="${u('/agents/?sort=stars')}">View all ›</a></div>
-  <div class="cards">${directory.slice(0, 6).map((d) => dirCard({ ...d, curated: false })).join('')}</div>
+  <div class="cards">${listings().filter((d) => !d.curated).sort((x, y) => y.stars - x.stars).slice(0, 6).map(dirCard).join('')}</div>
 </section>
 
 <section>
   <div class="row-head"><h2>New &amp; rising (created in the last 4 months)</h2><a href="${u('/agents/?sort=new')}">View all ›</a></div>
-  <div class="cards">${directory.filter(isNew).slice(0, 6).map((d) => dirCard({ ...d, curated: false })).join('')}</div>
+  <div class="cards">${listings().filter((x) => !x.curated && isNew(x)).sort((x, y) => y.stars - x.stars).slice(0, 6).map(dirCard).join('')}</div>
 </section>
 
 <section>
@@ -718,6 +718,7 @@ add('/404', page({ path: '/404.html', title: 'Not found', description: 'Page not
 
 rmSync(DIST, { recursive: true, force: true });
 const write = (rel, content) => { const p = join(DIST, rel); mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, content); };
+for (const [p, html] of Object.entries(pages)) { if (/>undefined<|undefined\/100|NaN/.test(html)) throw new Error(`Page ${p} renders an undefined/NaN value`); }
 for (const [p, html] of Object.entries(pages)) write(p === '/404' ? '404.html' : join(p, 'index.html'), html);
 cpSync(join(ROOT, 'site/assets'), join(DIST, 'assets'), { recursive: true });
 for (const r of runs) for (const f of r.artifacts || []) { const src = join(ROOT, 'data/runs', r.id, f); if (existsSync(src)) { mkdirSync(join(DIST, 'runs', r.id), { recursive: true }); cpSync(src, join(DIST, 'runs', r.id, f)); } }
